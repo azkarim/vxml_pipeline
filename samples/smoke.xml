@@ -1,0 +1,6 @@
+<Book>
+  <Chapter>
+    <Title>Renderer smoke test</Title>
+    <p>Input is XML, transformed as VXML, and emitted as JSX-like output.</p>
+  </Chapter>
+</Book>
