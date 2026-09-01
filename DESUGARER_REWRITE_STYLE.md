@@ -45,9 +45,8 @@ exception when both of these conditions hold:
 File length alone does not justify the exception. When using it, retain only
 the carefully organized implementation portion: still place `name`, the beach
 banner, description and constructor, and parameter preparation at the top when
-that can be done without disrupting the semantic sections. Record the file and
-the specific organization being preserved in `DESUGARER_REWRITE_REVIEW.md` and
-surface it to the human reviewer.
+that can be done without disrupting the semantic sections. Surface the file
+and the specific organization being preserved to the human reviewer.
 
 ## Public parameters and private implementation types
 
@@ -229,8 +228,8 @@ describes the desugarer's observable transformation. During a rewrite:
   end with punctuation. Wrap their `///` lines to roughly 60 characters,
   including the comment prefix.
 - If the intended behavior or wording remains uncertain, still write the best
-  description supported by the code, then record the uncertainty and the
-  inferred interpretation in `DESUGARER_REWRITE_REVIEW.md` for human review.
+  description supported by the code, then surface the uncertainty and inferred
+  interpretation for human review.
 
 ## Desugarer section decoration
 

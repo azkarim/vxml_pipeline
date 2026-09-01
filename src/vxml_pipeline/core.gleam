@@ -1,3 +1,5 @@
+//// Core desugarer and pipeline types, errors, warnings, and VXML utilities.
+
 import either_or as eo
 import gleam/dict.{type Dict}
 import gleam/int

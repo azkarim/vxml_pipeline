@@ -1,3 +1,5 @@
+//// Test data, collections, and runners for desugarers.
+
 import gleam/io
 import gleam/list
 import gleam/string

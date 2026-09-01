@@ -11,6 +11,8 @@ MODULES=$(find "$SRC_DIR" -maxdepth 1 -type f -name '*.gleam' ! -name '__*' \
 
 # Write the file
 {
+  echo "//// Reusable selectors for pipeline tracking output."
+  echo
   # imports
   printf '%s\n' "$MODULES" | while IFS= read -r m; do
     echo "import vxml_pipeline/selectors/${m}"
@@ -22,5 +24,7 @@ MODULES=$(find "$SRC_DIR" -maxdepth 1 -type f -name '*.gleam' ! -name '__*' \
     echo "pub const ${m} = ${m}.selector"
   done
 } > "$OUT_FILE"
+
+gleam format "$OUT_FILE"
 
 echo "Wrote $OUT_FILE with $(printf '%s\n' "$MODULES" | wc -l | tr -d ' ') selector(s)."

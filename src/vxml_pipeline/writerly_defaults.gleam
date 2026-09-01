@@ -1,3 +1,5 @@
+//// Writerly assembler, parser, and emitter adapters for the generic renderer.
+
 import dirtree as dt
 import gleam/list
 import gleam/result
@@ -11,7 +13,7 @@ import vxml_pipeline.{
 }
 import writerly as wl
 
-/// Transitional Writerly adapter defaults for the generic renderer.
+/// Writerly adapter defaults for the generic renderer.
 ///
 /// This module keeps Writerly-specific assembly, parsing, and emitting
 /// separate from the input-format-agnostic renderer core. It is adapter glue,

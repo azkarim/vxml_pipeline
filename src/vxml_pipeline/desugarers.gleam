@@ -1,3 +1,5 @@
+//// Reusable desugarer constructors.
+
 import vxml_pipeline/desugarers/absorb_backward_one
 import vxml_pipeline/desugarers/absorb_forward_one
 import vxml_pipeline/desugarers/absorb_into_previous_sibling

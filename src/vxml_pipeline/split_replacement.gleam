@@ -1,3 +1,5 @@
+//// Literal and regular-expression rules for splitting text into VXML.
+
 import gleam/list
 import gleam/regexp.{type Regexp}
 import gleam/string.{inspect as ins}

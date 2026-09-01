@@ -11,6 +11,8 @@ MODULES=$(find "$SRC_DIR" -maxdepth 1 -type f -name '*.gleam' ! -name '__*' \
 
 # Write the file
 {
+  echo "//// Reusable desugarer constructors."
+  echo
   # imports
   echo "import vxml_pipeline/testing"
   printf '%s\n' "$MODULES" | while IFS= read -r m; do
@@ -31,5 +33,7 @@ MODULES=$(find "$SRC_DIR" -maxdepth 1 -type f -name '*.gleam' ! -name '__*' \
   done
   echo "]"
 } > "$OUT_FILE"
+
+gleam format "$OUT_FILE"
 
 echo "Wrote $OUT_FILE with $(printf '%s\n' "$MODULES" | wc -l | tr -d ' ') desugarer(s)."

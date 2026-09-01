@@ -1,3 +1,8 @@
+//// Orchestrates VXML transformation pipelines and file-oriented renderers.
+////
+//// This module owns pipeline execution, monitors, renderer stages, feedback,
+//// renderer options, and command-line integration.
+
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject, receive, send, spawn}
 import gleam/float

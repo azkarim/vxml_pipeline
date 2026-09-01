@@ -1,3 +1,5 @@
+//// Constructors and blame helpers for client-authored desugarers.
+
 import gleam/option
 import gleam/string
 import vxml/blame.{type Blame, Des}

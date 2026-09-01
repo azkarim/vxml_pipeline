@@ -497,7 +497,8 @@ gleam test
 Run only the renderer integration test with
 `gleam run -m renderer_integration_test`.
 
-Run the package's generated desugarer test registry with:
+From a checkout of this repository, run the package's generated desugarer test
+registry with:
 
 ```sh
 gleam run -m desugarer_tests
