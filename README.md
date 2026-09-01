@@ -1,5 +1,8 @@
 # VXML Pipeline
 
+[![Package Version](https://img.shields.io/hexpm/v/vxml_pipeline)](https://hex.pm/packages/vxml_pipeline)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/vxml_pipeline/)
+
 Run and debug [VXML](https://github.com/vistuleB/vxml) transformation
 pipelines.
 
@@ -16,6 +19,12 @@ The package provides two related execution layers:
 The package also includes reusable desugarers, pipeline monitors, command-line
 argument handling, local-desugarer tooling, and a test framework for
 desugarers.
+
+Add it to a Gleam project with:
+
+```sh
+gleam add vxml_pipeline
+```
 
 ## Desugarers
 

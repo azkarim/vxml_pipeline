@@ -1,5 +1,6 @@
 import desugaring
 import gleam/option
+import gleam/string
 
 fn assert_parses(arguments: List(String)) -> Nil {
   let assert Ok(_) = desugaring.process_command_line_arguments(arguments, [])
@@ -9,6 +10,12 @@ fn assert_parses(arguments: List(String)) -> Nil {
 fn assert_does_not_parse(arguments: List(String)) -> Nil {
   let assert Error(_) = desugaring.process_command_line_arguments(arguments, [])
   Nil
+}
+
+fn assert_error_contains(arguments: List(String), expected: String) -> Nil {
+  let assert Error(error) =
+    desugaring.process_command_line_arguments(arguments, [])
+  assert error |> desugaring.cli_error_message |> string.contains(expected)
 }
 
 pub fn main() {
@@ -52,48 +59,27 @@ pub fn main() {
   assert_parses(["--validate-vxml", "-lines-only"])
   assert_does_not_parse(["--validate-vxml", "-unknown"])
   assert_does_not_parse(["--validate-vxml", "--validate-vxml"])
-  let assert Error(desugaring.CommandLineArgumentError(desugaring.ConflictingOptionArguments(
-    "--validate-vxml",
-  ))) =
-    desugaring.process_command_line_arguments(
-      ["--validate-vxml", "-lines-only", "-warn-attribute-whitespace"],
-      [],
-    )
-  let assert Error(desugaring.CommandLineArgumentError(desugaring.ConflictingOptionArguments(
-    "--dump",
-  ))) =
-    desugaring.process_command_line_arguments(
-      ["--dump", "-cc10", "10", "--dump", "-cc20", "20"],
-      [],
-    )
-  let assert Error(desugaring.CommandLineArgumentError(desugaring.ConflictingOptionArguments(
-    "--dump",
-  ))) =
-    desugaring.process_command_line_arguments(
-      ["--dump", "-verbatim", "10", "--dump", "20"],
-      [],
-    )
-  let assert Error(desugaring.CommandLineArgumentError(desugaring.DuplicateOption(
-    "--input-dir",
-  ))) =
-    desugaring.process_command_line_arguments(
-      ["--input-dir", "one", "--input-dir", "two"],
-      [],
-    )
-  let assert Error(desugaring.CommandLineArgumentError(desugaring.DuplicateOption(
-    "--output-dir",
-  ))) =
-    desugaring.process_command_line_arguments(
-      ["--output-dir", "one", "--output-dir", "two"],
-      [],
-    )
-  let assert Error(desugaring.CommandLineArgumentError(desugaring.DuplicateOption(
-    "--times",
-  ))) =
-    desugaring.process_command_line_arguments(
-      ["--times", "80", "--times", "100"],
-      [],
-    )
+  assert_error_contains(
+    ["--validate-vxml", "-lines-only", "-warn-attribute-whitespace"],
+    "ConflictingOptionArguments",
+  )
+  assert_error_contains(
+    ["--dump", "-cc10", "10", "--dump", "-cc20", "20"],
+    "ConflictingOptionArguments",
+  )
+  assert_error_contains(
+    ["--dump", "-verbatim", "10", "--dump", "20"],
+    "ConflictingOptionArguments",
+  )
+  assert_error_contains(
+    ["--input-dir", "one", "--input-dir", "two"],
+    "DuplicateOption",
+  )
+  assert_error_contains(
+    ["--output-dir", "one", "--output-dir", "two"],
+    "DuplicateOption",
+  )
+  assert_error_contains(["--times", "80", "--times", "100"], "DuplicateOption")
   assert_parses(["--dump-assembled"])
   assert_parses(["--dump-parsed"])
   assert_parses(["--dump-filtered"])

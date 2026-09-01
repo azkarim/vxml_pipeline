@@ -328,11 +328,7 @@ pub type Prettifier(fragment_classifier) =
   fn(String, GhostOfOutputFragment(fragment_classifier), Option(String)) ->
     Option(PrettifierFeedback)
 
-pub fn run_prettier(
-  in: String,
-  path: String,
-  check: Bool,
-) -> PrettifierFeedback {
+fn run_prettier(in: String, path: String, check: Bool) -> PrettifierFeedback {
   let result =
     shellout.command(
       run: "prettier",
@@ -992,7 +988,7 @@ fn perform_requested_maintenance(
   }
 }
 
-pub type CommandLineError {
+pub opaque type CommandLineError {
   ExpectedDoubleDashString(String)
   UnknownOptionArgument(String)
   UnexpectedArgumentsToOption(String)
@@ -1659,7 +1655,7 @@ fn lo_hi_ints(lo: Int, hi: Int) -> List(Int) {
   }
 }
 
-pub fn extract_desugarer_name(input: String) -> #(String, String) {
+fn extract_desugarer_name(input: String) -> #(String, String) {
   let assert Ok(re) = regexp.from_string("^([a-z_][a-z0-9_]*)(.*)")
   case regexp.scan(with: re, content: input) {
     [regexp.Match(_, [Some(prefix), rest, ..])] -> #(
