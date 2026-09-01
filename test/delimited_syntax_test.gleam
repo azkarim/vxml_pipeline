@@ -1,11 +1,11 @@
-import desugaring as ds
-import desugaring/core.{
-  BackslashParenthesis, BeginEndAlign, DoubleDollar, SingleDollar,
-}
-import desugaring/delimited_syntax
-import desugaring/split_replacement as sr
 import vxml.{Attr, Line, T, V}
 import vxml/blame
+import vxml_pipeline as ds
+import vxml_pipeline/core.{
+  BackslashParenthesis, BeginEndAlign, DoubleDollar, SingleDollar,
+}
+import vxml_pipeline/delimited_syntax
+import vxml_pipeline/split_replacement as sr
 
 fn pipeline_ux_options() -> ds.PipelineUXOptions {
   ds.PipelineUXOptions(False, False, 0)

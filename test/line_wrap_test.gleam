@@ -1,7 +1,7 @@
-import desugaring/line_wrapping
 import gleam/list
 import vxml.{type Line, Line}
 import vxml/blame
+import vxml_pipeline/line_wrapping
 
 fn line_contents(lines: List(Line)) -> List(String) {
   lines

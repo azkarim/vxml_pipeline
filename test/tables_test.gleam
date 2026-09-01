@@ -1,4 +1,4 @@
-import desugaring/tables
+import vxml_pipeline/tables
 
 pub fn main() {
   assert tables.two_column_table([#("a", "bb"), #("ccc", "d")])

@@ -1,9 +1,9 @@
-import desugaring as ds
-import desugaring/core
-import desugaring/desugarers as dl
 import gleam/list
 import gleam/string
 import simplifile
+import vxml_pipeline as ds
+import vxml_pipeline/core
+import vxml_pipeline/desugarers as dl
 
 const output_path = "build/renderer-integration-output/Book.tsx"
 

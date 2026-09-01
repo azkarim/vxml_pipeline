@@ -192,7 +192,7 @@ logic, when it is reused, or when inlining would make
 
 ## Constructor
 
-The target concise form uses `desugaring/authoring`:
+The target concise form uses `vxml_pipeline/authoring`:
 
 ```gleam
 pub fn constructor(param: Param) -> Desugarer {

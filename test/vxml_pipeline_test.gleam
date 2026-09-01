@@ -1,6 +1,6 @@
 import command_line_parser_test
 import delimited_syntax_test
-import desugarers as desugarer_tests
+import desugarer_tests
 import help_request_test
 import line_wrap_test
 import monitor_test

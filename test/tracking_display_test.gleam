@@ -1,8 +1,8 @@
-import desugaring/selectors
-import desugaring/tracking
 import gleam/list
 import vxml.{V}
 import vxml/blame
+import vxml_pipeline/selectors
+import vxml_pipeline/tracking
 
 fn margin(columns: Int) {
   blame.BlameTableMarginColumnsMinMax(columns, columns)

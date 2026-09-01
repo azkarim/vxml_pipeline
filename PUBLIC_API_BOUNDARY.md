@@ -3,27 +3,17 @@
 This document records the compatibility boundary preserved by the
 `vxml_pipeline` package.
 
-## Compatibility module paths
+## Public module paths
 
-During the compatibility phase, existing Gleam module paths remain supported:
+The primary public modules are:
 
 ```gleam
-import desugaring
-import desugaring/core
-import desugaring/authoring
-import desugaring/nodemaps_2_transform
-import desugaring/desugarers
+import vxml_pipeline
+import vxml_pipeline/core
+import vxml_pipeline/authoring
+import vxml_pipeline/nodemaps_2_transform
+import vxml_pipeline/desugarers
 ```
-
-The Gleam package is named `vxml_pipeline`, while these modules retain their
-established names. Package names and Gleam module names do not have to match.
-Preserving the module paths avoids a coordinated source migration in all
-current consumers.
-
-No `vxml_pipeline` facade should be presented as a replacement for these
-modules while constructor-owning types remain here. Gleam type aliases do not
-re-export custom type constructors, so such a facade would expose an
-incomplete API.
 
 ## Constructor-owning public types
 
@@ -31,7 +21,7 @@ The following types have public constructors or variants that client code may
 need to construct or pattern-match. Their defining modules own those
 constructors and remain part of the compatibility API.
 
-### `desugaring/core`
+### `vxml_pipeline/core`
 
 - `TrafficLight`
 - `LatexDelimiterPair`
@@ -44,10 +34,10 @@ constructors and remain part of the compatibility API.
 
 `DesugaringError`, `DesugaringWarning`, and `Desugarer` are especially
 important to client-authored desugarers. Moving their definitions would make
-aliases in `desugaring/core` insufficient because aliases cannot preserve
+aliases in `vxml_pipeline/core` insufficient because aliases cannot preserve
 constructor imports.
 
-### `desugaring`
+### `vxml_pipeline`
 
 - `FeedbackMargin`
 - `FeedbackBlock`
@@ -61,7 +51,7 @@ Monitor callbacks construct `Feedback` and `FeedbackBlock` values and inspect
 `PipelineStepContext` values. These types therefore cannot be replaced by a
 facade alias without also introducing a different constructor/accessor API.
 
-### `desugaring/tracking`
+### `vxml_pipeline/tracking`
 
 - `SLine`
 - `SelectionStatus`
@@ -88,26 +78,16 @@ API modules without losing functionality. Examples include:
 
 `Monitor` is opaque and is created through `new_monitor`. Its constructor is
 not part of the client API, so it can be moved more safely than a public custom
-type if `desugaring.Monitor` and `desugaring.new_monitor` remain usable.
+type if `vxml_pipeline.Monitor` and `vxml_pipeline.new_monitor` remain usable.
 
 ## Restructuring rules
 
-Until a deliberate breaking module migration:
-
-1. Keep constructor-owning public types in their current modules.
+1. Keep constructor-owning public types in their documented modules.
 2. Extract implementation behind existing public entry points rather than
-   moving their public types.
+   moving their public types without a deliberate API change.
 3. Do not use a public type alias as evidence that a constructor-owning API has
    been re-exported.
 4. Prefer opaque types plus constructor/accessor functions only when that is
-   the intended API, not as an incidental compatibility workaround.
+   the intended API.
 5. Test every public-boundary change against the maintained consumers:
    `courses`, `dr`, `little-bo-peep-solid`, and `ti2_html`.
-6. Reserve module-path renaming for a coordinated breaking release.
-
-## First independent release
-
-The compatibility-first release should change the dependency package to
-`vxml_pipeline` while retaining the established `desugaring/*` module paths.
-This separates package publication from a later, explicitly breaking module
-namespace migration.

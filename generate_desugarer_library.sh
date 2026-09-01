@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Generates src/desugaring/desugarers.gleam from the files in src/desugaring/desugarers/
+# Generates src/vxml_pipeline/desugarers.gleam from the files in src/vxml_pipeline/desugarers/
 set -euo pipefail
 
-SRC_DIR="src/desugaring/desugarers"
-OUT_FILE="src/desugaring/desugarers.gleam"
+SRC_DIR="src/vxml_pipeline/desugarers"
+OUT_FILE="src/vxml_pipeline/desugarers.gleam"
 
 # Build a newline-separated list of module names (strip '__'-prefixed and '.gleam')
 MODULES=$(find "$SRC_DIR" -maxdepth 1 -type f -name '*.gleam' ! -name '__*' \
@@ -12,9 +12,9 @@ MODULES=$(find "$SRC_DIR" -maxdepth 1 -type f -name '*.gleam' ! -name '__*' \
 # Write the file
 {
   # imports
-  echo "import desugaring/testing"
+  echo "import vxml_pipeline/testing"
   printf '%s\n' "$MODULES" | while IFS= read -r m; do
-    echo "import desugaring/desugarers/${m}"
+    echo "import vxml_pipeline/desugarers/${m}"
   done
   echo
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Renumber desugarer-created blame references in src/desugaring/desugarers/*.gleam.
+# Renumber desugarer-created blame references in src/vxml_pipeline/desugarers/*.gleam.
 #
 # Rewrites:
 #   desugarer_blame(123)      -> desugarer_blame(current_line)
@@ -13,7 +13,7 @@ set -euo pipefail
 # in the standard desugarer-name shape, so helper bodies using `line_no` are left
 # unchanged.
 
-target_dir="${1:-src/desugaring/desugarers}"
+target_dir="${1:-src/vxml_pipeline/desugarers}"
 
 if [ ! -d "$target_dir" ]; then
   echo "Error: directory '$target_dir' does not exist." >&2

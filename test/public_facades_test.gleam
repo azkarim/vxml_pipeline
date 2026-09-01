@@ -1,8 +1,8 @@
-import desugaring/authoring
-import desugaring/core
-import desugaring/testing
 import vxml.{type VXML}
 import vxml/blame.{Des}
+import vxml_pipeline/authoring
+import vxml_pipeline/core
+import vxml_pipeline/testing
 
 const name = "client_identity"
 

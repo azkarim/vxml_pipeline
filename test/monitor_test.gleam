@@ -1,6 +1,3 @@
-import desugaring as ds
-import desugaring/core.{Desugarer}
-import desugaring/desugarers as dl
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
@@ -9,6 +6,9 @@ import gleam/string
 import gleam/time/duration
 import vxml
 import vxml/blame
+import vxml_pipeline as ds
+import vxml_pipeline/core.{Desugarer}
+import vxml_pipeline/desugarers as dl
 
 fn pipeline_ux_options() -> ds.PipelineUXOptions {
   ds.PipelineUXOptions(False, False, 0)

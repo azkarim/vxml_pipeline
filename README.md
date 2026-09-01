@@ -3,11 +3,8 @@
 [![Package Version](https://img.shields.io/hexpm/v/vxml_pipeline)](https://hex.pm/packages/vxml_pipeline)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/vxml_pipeline/)
 
-Run and debug [VXML](https://github.com/vistuleB/vxml) transformation
+Run and debug [VXML](https://hex.pm/packages/vxml) transformation
 pipelines.
-
-The Gleam package is named `vxml_pipeline`. Its established module namespace
-remains `desugaring`, so the examples below use `desugaring` module paths.
 
 The package provides two related execution layers:
 
@@ -46,12 +43,12 @@ pub type Desugarer {
 }
 ```
 
-The generated `desugaring/desugarers` module exports the reusable desugarer
+The generated `vxml_pipeline/desugarers` module exports the reusable desugarer
 constructors:
 
 ```gleam
-import desugaring/core
-import desugaring/desugarers as dl
+import vxml_pipeline/core
+import vxml_pipeline/desugarers as dl
 
 let pipeline = [
   dl.rename(#("Chapter", "section")),
@@ -65,12 +62,12 @@ Each constructor validates or prepares its parameters when it creates the
 ### Authoring a desugarer
 
 Client-defined desugarers are ordinary Gleam modules. The
-`desugaring/authoring` module packages parameter preparation and transform
+`vxml_pipeline/authoring` module packages parameter preparation and transform
 construction into a `Desugarer`:
 
 ```gleam
-import desugaring/authoring
-import desugaring/core.{
+import vxml_pipeline/authoring
+import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
 }
 
@@ -106,11 +103,11 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
 for VXML introduced by a desugarer.
 
 Most reusable desugarers define a typed operation on one node and use
-`desugaring/nodemaps_2_transform` to walk the complete tree. A desugarer may
+`vxml_pipeline/nodemaps_2_transform` to walk the complete tree. A desugarer may
 instead implement `DesugarerTransform` directly when its operation requires
 different traversal behavior.
 
-The repository's complete source conventions are recorded in
+The repository's desugarer style conventions are recorded in
 `DESUGARER_REWRITE_STYLE.md`. Desugarer testing and application-local
 desugarer registries are described later in this README.
 
@@ -137,9 +134,9 @@ The function requires:
   and the margin of pipeline-owned feedback.
 
 ```gleam
-import desugaring as vp
-import desugaring/core
-import desugaring/desugarers as dl
+import vxml_pipeline as vp
+import vxml_pipeline/core
+import vxml_pipeline/desugarers as dl
 
 let pipeline: core.Pipeline = [
   dl.rename(#("Chapter", "section")),
@@ -207,9 +204,9 @@ The following is a complete single-file XML-to-JSX renderer of the same shape
 as `test/renderer_integration_test.gleam`:
 
 ```gleam
-import desugaring as vp
-import desugaring/core
-import desugaring/desugarers as dl
+import vxml_pipeline as vp
+import vxml_pipeline/core
+import vxml_pipeline/desugarers as dl
 
 fn pipeline() -> core.Pipeline {
   [
@@ -262,7 +259,7 @@ core operates on `InputLine`, `OutputLine`, and VXML rather than on Writerly
 syntax directly:
 
 ```gleam
-import desugaring/writerly_defaults as wd
+import vxml_pipeline/writerly_defaults as wd
 
 wd.default_writerly_assembler
 wd.default_writerly_parser
@@ -300,8 +297,8 @@ renderer runner's margin; `Verbatim` leaves its lines unindented.
 
 ## Monitors
 
-A monitor observes the VXML between pipeline steps. It may retain state,
-produce feedback, or stop the pipeline with an error:
+A monitor observes the initial VXML and the result of every desugaring step.
+It may retain state, produce feedback, or stop the pipeline with an error:
 
 ```gleam
 vp.new_monitor(
@@ -383,7 +380,7 @@ A typical entry point has this shape:
 
 ```gleam
 import argv
-import desugaring as vp
+import vxml_pipeline as vp
 import gleam/io
 import local_desugarers
 import on
@@ -472,7 +469,7 @@ syntax accepted by `--track`.
 
 ## Testing desugarers
 
-`desugaring/testing` provides VXML-to-VXML test data and collection helpers:
+`vxml_pipeline/testing` provides VXML-to-VXML test data and collection helpers:
 
 ```gleam
 let collection =
@@ -503,8 +500,8 @@ Run only the renderer integration test with
 Run the package's generated desugarer test registry with:
 
 ```sh
-gleam run -m desugarers
-gleam run -m desugarers -- rename
+gleam run -m desugarer_tests
+gleam run -m desugarer_tests -- rename
 ```
 
 ## Local desugarers in an application
@@ -522,18 +519,18 @@ src/
 Generate `src/local_desugarers.gleam` from `src/desugarers/`:
 
 ```sh
-gleam run -m desugaring/generate_local_desugarers_dot_gleam
+gleam run -m vxml_pipeline/generate_local_desugarers_dot_gleam
 ```
 
 Renumber `authoring.blame` line references:
 
 ```sh
-gleam run -m desugaring/renumber_local_desugarer_blames
+gleam run -m vxml_pipeline/renumber_local_desugarer_blames
 ```
 
 The generated registry exports each module's `constructor` and an
 `assertive_tests` list. A small application-owned `local_desugarer_tests.gleam`
-can pass that list to `desugaring/testing.test_desugarers`.
+can pass that list to `vxml_pipeline/testing.test_desugarers`.
 
 When command-line maintenance handling is installed, the application also
 accepts:
@@ -548,34 +545,26 @@ directory.
 
 ## Module guide
 
-- `desugaring` — renderer stages, execution, feedback, monitors, renderer
+- `vxml_pipeline` — renderer stages, execution, feedback, monitors, renderer
   options, CLI handling, and default generic stages.
-- `desugaring/core` — desugarer and pipeline types, errors and warnings, VXML
+- `vxml_pipeline/core` — desugarer and pipeline types, errors and warnings, VXML
   helpers, and lower-level utilities used by desugarers.
-- `desugaring/desugarers` — generated registry of reusable desugarer
+- `vxml_pipeline/desugarers` — generated registry of reusable desugarer
   constructors.
-- `desugaring/delimited_syntax` — reusable multi-desugarer fragments for
+- `vxml_pipeline/delimited_syntax` — reusable multi-desugarer fragments for
   delimiters, inline markup, and link parsing.
-- `desugaring/split_replacement` — literal and regular-expression splitting
+- `vxml_pipeline/split_replacement` — literal and regular-expression splitting
   rules that replace matched segments with VXML.
-- `desugaring/authoring` — constructors and blame helpers for client-authored
+- `vxml_pipeline/authoring` — constructors and blame helpers for client-authored
   desugarers.
-- `desugaring/testing` — public desugarer testing API.
-- `desugaring/nodemaps_2_transform` — tree walkers that convert typed nodemaps
+- `vxml_pipeline/testing` — public desugarer testing API.
+- `vxml_pipeline/nodemaps_2_transform` — tree walkers that convert typed nodemaps
   into desugarer transforms.
-- `desugaring/tracking` and `desugaring/selectors` — VXML selection and monitor
+- `vxml_pipeline/tracking` and `vxml_pipeline/selectors` — VXML selection and monitor
   output.
-- `desugaring/line_wrapping` — blame-preserving line wrapping.
-- `desugaring/writerly_defaults` — Writerly assembler, parser, and emitter
+- `vxml_pipeline/line_wrapping` — blame-preserving line wrapping.
+- `vxml_pipeline/writerly_defaults` — Writerly assembler, parser, and emitter
   adapters.
-
-## Package and module names
-
-The package name is `vxml_pipeline`, while its modules retain the established
-`desugaring` and `desugaring/*` names. The package rename does not change the
-distinction between a `Pipeline` (only the ordered VXML transformations) and a
-`Renderer` (the complete input-to-files process). See
-`PUBLIC_API_BOUNDARY.md` for the compatibility constraints.
 
 ## License
 

@@ -1,21 +1,22 @@
-import desugaring
 import gleam/option
 import gleam/string
+import vxml_pipeline
 
 fn assert_parses(arguments: List(String)) -> Nil {
-  let assert Ok(_) = desugaring.process_command_line_arguments(arguments, [])
+  let assert Ok(_) = vxml_pipeline.process_command_line_arguments(arguments, [])
   Nil
 }
 
 fn assert_does_not_parse(arguments: List(String)) -> Nil {
-  let assert Error(_) = desugaring.process_command_line_arguments(arguments, [])
+  let assert Error(_) =
+    vxml_pipeline.process_command_line_arguments(arguments, [])
   Nil
 }
 
 fn assert_error_contains(arguments: List(String), expected: String) -> Nil {
   let assert Error(error) =
-    desugaring.process_command_line_arguments(arguments, [])
-  assert error |> desugaring.cli_error_message |> string.contains(expected)
+    vxml_pipeline.process_command_line_arguments(arguments, [])
+  assert error |> vxml_pipeline.cli_error_message |> string.contains(expected)
 }
 
 pub fn main() {
@@ -48,7 +49,7 @@ pub fn main() {
   assert_parses(["--dump", "-i", "120-"])
   assert_parses(["--dump", "120-", "-i"])
   let assert Ok(interactive_dump) =
-    desugaring.process_command_line_arguments(["--dump", "-i", "120-"], [])
+    vxml_pipeline.process_command_line_arguments(["--dump", "-i", "120-"], [])
   assert interactive_dump.monitor_interactive_mode
   assert_parses(["--dump", "-bc0", "-cc0", "!120-130"])
   assert_parses(["--dump", "10", "--dump", "20"])
@@ -118,7 +119,7 @@ pub fn main() {
   assert_does_not_parse(["--last-command", "--help"])
   assert_does_not_parse(["--last-command", "unexpected"])
   let assert Ok(requests) =
-    desugaring.process_command_line_arguments(
+    vxml_pipeline.process_command_line_arguments(
       [
         "-h", "--esoteric", "--track-help", "--renumber", "--regenerate",
         "--desugarers", "--test-desugarers", "one", "two",
