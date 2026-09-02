@@ -64,7 +64,7 @@ fn nodemap(
     V(_, tag, attrs, _), [V(_, prev_tag, _, _), ..]
       if tag == inner.target_tag && prev_tag == inner.target_tag
     -> {
-      let new_attr = Attr(authoring.blame(name, 66), inner.key, inner.value)
+      let new_attr = Attr(authoring.blame(name, 67), inner.key, inner.value)
       Ok(V(..vxml, attrs: list.append(attrs, [new_attr])))
     }
     _, _ -> Ok(vxml)

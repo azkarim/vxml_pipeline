@@ -69,9 +69,9 @@ fn desugarer_blame(line_no: Int) {
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
 
 fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
-  let wrapper = V(desugarer_blame(65), "wrapper", [], [])
-  let container = V(desugarer_blame(66), "container", [], [])
-  let main = V(desugarer_blame(67), "main", [], [])
+  let wrapper = V(desugarer_blame(72), "wrapper", [], [])
+  let container = V(desugarer_blame(73), "container", [], [])
+  let main = V(desugarer_blame(74), "main", [], [])
   [
     testing.data(
       param: #("p", wrapper),

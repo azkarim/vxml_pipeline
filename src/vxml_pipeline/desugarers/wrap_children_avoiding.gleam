@@ -86,7 +86,7 @@ fn wrap_in_list(
         _ -> {
           let wrapper =
             V(
-              desugarer_blame(87),
+              desugarer_blame(89),
               inner.wrapper,
               [],
               list.reverse(currently_being_wrapped),
@@ -102,7 +102,7 @@ fn wrap_in_list(
         _ -> {
           let wrapper =
             V(
-              desugarer_blame(103),
+              desugarer_blame(105),
               inner.wrapper,
               [],
               list.reverse(currently_being_wrapped),

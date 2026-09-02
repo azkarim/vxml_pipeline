@@ -14,7 +14,7 @@ fn param_to_inner_param(
   outside: List(String),
 ) -> Result(InnerParam, DesugaringError) {
   case list.contains(outside, param.0) {
-    True -> Ok(#(param.0, param.1, desugarer_blame(57)))
+    True -> Ok(#(param.0, param.1, desugarer_blame(17)))
     False ->
       Error(DesugaringError(
         bl.no_blame,

@@ -50,7 +50,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   let #(target, wrapper, move_above, move_below) = param
   Ok(InnerParam(
     target,
-    V(desugarer_blame(51), wrapper, [], []),
+    V(desugarer_blame(53), wrapper, [], []),
     move_above,
     move_below,
   ))

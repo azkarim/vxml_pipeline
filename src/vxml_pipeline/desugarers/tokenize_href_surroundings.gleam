@@ -26,7 +26,7 @@ pub fn constructor() -> Desugarer {
   )
 }
 
-const had_href_child = Attr(bl.Des([], name, 28), "had_href_child", "true")
+const had_href_child = Attr(bl.Des([], name, 29), "had_href_child", "true")
 
 fn param_to_inner_param(_param: Param) -> Result(InnerParam, DesugaringError) {
   let opening_parenthesis_splitter: Splitter =

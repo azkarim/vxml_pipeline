@@ -45,7 +45,7 @@ type InnerParam {
 }
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  Ok(InnerParam(param.0, authoring.blame(name, 47), param.1, param.2))
+  Ok(InnerParam(param.0, authoring.blame(name, 48), param.1, param.2))
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {

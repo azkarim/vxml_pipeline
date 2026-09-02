@@ -52,7 +52,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   InnerParam(
     param.0,
     param.1,
-    [Attr(authoring.blame(name, 54), param.2, param.3)],
+    [Attr(authoring.blame(name, 55), param.2, param.3)],
     param.4,
   )
   |> Ok

@@ -46,7 +46,7 @@ type InnerParam {
 }
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  use vxml <- on.ok(core.from_tag(authoring.blame(name, 48), param.1))
+  use vxml <- on.ok(core.from_tag(authoring.blame(name, 49), param.1))
   Ok(InnerParam(param.0, vxml, param.2))
 }
 

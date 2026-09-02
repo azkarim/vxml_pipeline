@@ -345,6 +345,7 @@ fn pipeline_entry_kind(desugarer: Desugarer) -> PipelineEntryKind {
 fn desugarer_to_list_lines(
   desugarer: Desugarer,
   index: Int,
+  max_name_cols: Int,
   max_param_cols: Int,
   max_outside_cols: Int,
   none_string: String,
@@ -356,7 +357,7 @@ fn desugarer_to_list_lines(
     }
     OrdinaryPipelineEntry -> {
       let number = ins(index + 1) <> "."
-      let name = desugarer.name
+      let name = desugarer.name |> ddd_truncate(max_name_cols)
       let param_lines = case desugarer.stringified_param {
         None -> [none_string]
         Some(thing) ->
@@ -384,8 +385,10 @@ pub fn pipeline_timing_table(
   desugarers: List(Desugarer),
   bars: List(String),
   scale: String,
+  default_name_columns: Int,
 ) -> List(String) {
   assert list.length(desugarers) == list.length(bars)
+  let max_name_cols = int.max(default_name_columns, 10)
   let rows =
     list.index_map(list.zip(desugarers, bars), fn(pair, index) {
       let #(desugarer, bar) = pair
@@ -394,7 +397,11 @@ pub fn pipeline_timing_table(
         PipelineSectionHeader(header) ->
           ["/", "/ " <> header <> " /", "/"] |> list.map(Or)
         OrdinaryPipelineEntry -> [
-          Either(#(ins(index + 1) <> ".", desugarer.name, bar)),
+          Either(#(
+            ins(index + 1) <> ".",
+            desugarer.name |> ddd_truncate(max_name_cols),
+            bar,
+          )),
         ]
       }
     })
@@ -402,16 +409,23 @@ pub fn pipeline_timing_table(
   three_column_table([Either(#("#.", "name", scale)), ..rows])
 }
 
-pub fn print_pipeline(desugarers: List(Desugarer)) {
+pub fn print_pipeline(
+  desugarers: List(Desugarer),
+  default_name_columns: Int,
+  default_param_columns: Int,
+  default_outside_columns: Int,
+) {
   let none_string = "--"
-  let max_param_cols = 65
-  let max_outside_cols = 45
+  let max_name_cols = int.max(default_name_columns, 10)
+  let max_param_cols = int.max(default_param_columns, 10)
+  let max_outside_cols = int.max(default_outside_columns, 10)
   let lines =
     desugarers
     |> list.index_map(fn(d, i) {
       desugarer_to_list_lines(
         d,
         i,
+        max_name_cols,
         max_param_cols,
         max_outside_cols,
         none_string,

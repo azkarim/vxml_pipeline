@@ -130,7 +130,7 @@ fn line_map(l: Line, inner: InnerParam) -> List(VXML) {
       V(
         bl.advance(blame, string.length(before) + 2),
         inner,
-        [vxml.Attr(desugarer_blame(132), "href", maybe_href)],
+        [vxml.Attr(desugarer_blame(133), "href", maybe_href)],
         [],
       ),
       ..line_map(
@@ -155,7 +155,7 @@ fn line_map(l: Line, inner: InnerParam) -> List(VXML) {
         V(
           bl.advance(blame, string.length(before) + 2),
           inner,
-          [vxml.Attr(desugarer_blame(157), "href", href)],
+          [vxml.Attr(desugarer_blame(158), "href", href)],
           [],
         ),
         ..line_map(

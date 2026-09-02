@@ -183,7 +183,7 @@ fn accumulator(
               }
             })
           let whitespace = case any_space_or_newline {
-            True -> [[Line(authoring.blame(name, 185), " ")]]
+            True -> [[Line(authoring.blame(name, 186), " ")]]
             False -> []
           }
           let all_lists =
@@ -196,7 +196,7 @@ fn accumulator(
           let children = case bridge_lines {
             [] -> core.pour(c1_others_reversed, c2_others)
             _ -> {
-              let bridge_child = T(authoring.blame(name, 198), bridge_lines)
+              let bridge_child = T(authoring.blame(name, 199), bridge_lines)
               core.pour([bridge_child, ..c1_others_reversed], c2_others)
             }
           }

@@ -115,10 +115,10 @@ fn hyperlink_constructor(
 }
 
 fn warning_element(handle_name: String, blame: Blame) -> VXML {
-  V(desugarer_blame(68), "InTextWarning", [], [
-    T(desugarer_blame(69), [
+  V(desugarer_blame(118), "InTextWarning", [], [
+    T(desugarer_blame(119), [
       Line(
-        desugarer_blame(71),
+        desugarer_blame(121),
         "undefined handle at " <> bl.blame_digest(blame) <> ": " <> handle_name,
       ),
     ]),
@@ -508,7 +508,7 @@ fn substitute_hrefs_in_a(
         None, _ -> Ok(Some(href_type))
         _, _ ->
           Error(DesugaringError(
-            desugarer_blame(467),
+            desugarer_blame(511),
             "duplicate 'href' attribute",
           ))
       })
@@ -656,8 +656,8 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
     handle_key: param.0,
     in_page_tag: param.1,
     out_page_tag: param.2,
-    in_page_attrs: param.3 |> core.string_pairs_to_attrs(desugarer_blame(594)),
-    out_page_attrs: param.4 |> core.string_pairs_to_attrs(desugarer_blame(595)),
+    in_page_attrs: param.3 |> core.string_pairs_to_attrs(desugarer_blame(659)),
+    out_page_attrs: param.4 |> core.string_pairs_to_attrs(desugarer_blame(660)),
     link_tags: param.5,
     math_tags: param.6,
     handle_candidates_regexp: handle_candidates_regexp,

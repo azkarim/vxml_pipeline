@@ -7,7 +7,7 @@ import vxml_pipeline/core.{
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-pub const name = "rename_if_child_of_one_of"
+pub const name = "rename_if_child_of_any"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️

@@ -11,7 +11,7 @@ import vxml_pipeline/core.{
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-pub const name = "counters_prepend_incrementing_attribute_if_fancy"
+pub const name = "sigil_counters_prepend_incrementing_attribute_if_fancy"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
@@ -19,7 +19,7 @@ pub const name = "counters_prepend_incrementing_attribute_if_fancy"
 
 /// Prepends a temporary counter-increment instruction attr when
 /// a contextual condition is satisfied. The named counter must
-/// already be in scope. Run `counters_substitute` afterward, then
+/// already be in scope. Run `sigil_counters_substitute__outside` afterward, then
 /// delete the temporary `_` attr when it is no longer useful.
 pub fn constructor(param: Param) -> Desugarer {
   authoring.desugarer(
@@ -70,7 +70,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   })
   Ok(InnerParam(
     target_tag,
-    Attr(desugarer_blame(44), "_", counter_name <> " ::++" <> counter_name),
+    Attr(desugarer_blame(73), "_", counter_name <> " ::++" <> counter_name),
     condition,
     traffic_light,
   ))

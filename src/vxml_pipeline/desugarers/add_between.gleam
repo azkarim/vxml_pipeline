@@ -43,7 +43,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   InnerParam(
     first_tag,
     second_tag,
-    V(authoring.blame(name, 45), inserted_tag, [], []),
+    V(authoring.blame(name, 46), inserted_tag, [], []),
   )
   |> Ok
 }

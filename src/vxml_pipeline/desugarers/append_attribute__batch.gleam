@@ -44,7 +44,7 @@ type InnerParam =
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   param
-  |> list.map(fn(t) { #(t.0, Attr(authoring.blame(name, 46), t.1, t.2)) })
+  |> list.map(fn(t) { #(t.0, Attr(authoring.blame(name, 47), t.1, t.2)) })
   |> core.aggregate_on_first
   |> Ok
 }

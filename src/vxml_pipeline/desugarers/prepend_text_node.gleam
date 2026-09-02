@@ -41,10 +41,10 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   #(
     param.0,
     T(
-      desugarer_blame(43),
+      desugarer_blame(44),
       param.1
         |> string.split("\n")
-        |> list.map(Line(desugarer_blame(46), _)),
+        |> list.map(Line(desugarer_blame(47), _)),
     ),
   )
   |> Ok

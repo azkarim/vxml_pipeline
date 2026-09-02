@@ -81,6 +81,61 @@ pub fn main() {
     "DuplicateOption",
   )
   assert_error_contains(["--times", "80", "--times", "100"], "DuplicateOption")
+  assert_parses(["--times"])
+  assert_parses(["--times", "40"])
+  assert_parses(["--times", "-", "80"])
+  assert_does_not_parse(["--times", "forty"])
+  assert_does_not_parse(["--times", "40", "80", "20"])
+  let assert Ok(timing_arguments) =
+    vxml_pipeline.process_command_line_arguments(["--times", "-", "80"], [])
+  let timing_options =
+    vxml_pipeline.amend_renderer_options_by_arguments(
+      vxml_pipeline.vanilla_options(),
+      timing_arguments,
+    )
+  assert timing_options.profiling_table
+  assert timing_options.pipeline_timing_table_default_desugarer_name_columns
+    == 70
+  assert timing_options.pipeline_timing_table_default_duration_columns == 80
+  let assert Ok(minimum_timing_arguments) =
+    vxml_pipeline.process_command_line_arguments(["--times", "1", "2"], [])
+  let minimum_timing_options =
+    vxml_pipeline.amend_renderer_options_by_arguments(
+      vxml_pipeline.vanilla_options(),
+      minimum_timing_arguments,
+    )
+  assert minimum_timing_options.pipeline_timing_table_default_desugarer_name_columns
+    == 10
+  assert minimum_timing_options.pipeline_timing_table_default_duration_columns
+    == 10
+  assert_parses(["--table"])
+  assert_parses(["--table", "-"])
+  assert_parses(["--table", "40"])
+  assert_parses(["--table", "-", "80"])
+  assert_parses(["--table", "40", "80", "20"])
+  assert_does_not_parse(["--table", "forty"])
+  assert_does_not_parse(["--table", "40", "80", "20", "10"])
+  let assert Ok(table_arguments) =
+    vxml_pipeline.process_command_line_arguments(["--table", "-", "80"], [])
+  let table_options =
+    vxml_pipeline.amend_renderer_options_by_arguments(
+      vxml_pipeline.vanilla_options(),
+      table_arguments,
+    )
+  assert table_options.pipeline_table_default_desugarer_name_columns == 70
+  assert table_options.pipeline_table_default_param_columns == 80
+  assert table_options.pipeline_table_default_outside_columns == 45
+  let assert Ok(minimum_table_arguments) =
+    vxml_pipeline.process_command_line_arguments(["--table", "1", "2", "3"], [])
+  let minimum_table_options =
+    vxml_pipeline.amend_renderer_options_by_arguments(
+      vxml_pipeline.vanilla_options(),
+      minimum_table_arguments,
+    )
+  assert minimum_table_options.pipeline_table_default_desugarer_name_columns
+    == 10
+  assert minimum_table_options.pipeline_table_default_param_columns == 10
+  assert minimum_table_options.pipeline_table_default_outside_columns == 10
   assert_parses(["--dump-assembled"])
   assert_parses(["--dump-parsed"])
   assert_parses(["--dump-filtered"])

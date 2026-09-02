@@ -42,8 +42,8 @@ type InnerParam =
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   Ok(#(
     param.0,
-    Line(desugarer_blame(44), param.1.0),
-    Line(desugarer_blame(45), param.1.1),
+    Line(desugarer_blame(45), param.1.0),
+    Line(desugarer_blame(46), param.1.1),
   ))
 }
 

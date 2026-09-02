@@ -23,15 +23,15 @@ fn handle_elements(state: State) -> List(VXML) {
       False -> "false"
     }
     V(
-      desugarer_blame(24),
+      desugarer_blame(26),
       "Handle",
       [
-        Attr(desugarer_blame(27), "name", key),
-        Attr(desugarer_blame(28), "decorators", decorators),
-        Attr(desugarer_blame(29), "page", page),
-        Attr(desugarer_blame(30), "value", handle_syntax.encode_value(value)),
-        Attr(desugarer_blame(32), "id", id),
-        Attr(desugarer_blame(33), "path", path),
+        Attr(desugarer_blame(29), "name", key),
+        Attr(desugarer_blame(30), "decorators", decorators),
+        Attr(desugarer_blame(31), "page", page),
+        Attr(desugarer_blame(32), "value", handle_syntax.encode_value(value)),
+        Attr(desugarer_blame(33), "id", id),
+        Attr(desugarer_blame(34), "path", path),
       ],
       [],
     )
@@ -212,7 +212,7 @@ fn on_exit(
     [] -> {
       let grand_wrapper =
         V(
-          desugarer_blame(164),
+          desugarer_blame(215),
           "GrandWrapper",
           [],
           list.append(handle_elements(state), [vxml]),

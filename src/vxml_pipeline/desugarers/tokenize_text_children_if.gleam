@@ -140,7 +140,7 @@ fn tokenize_string_acc(
 }
 
 fn word_node(blame: Blame, word: String) {
-  V(blame, "__OneWord", [Attr(desugarer_blame(38), "val", word)], [])
+  V(blame, "__OneWord", [Attr(desugarer_blame(143), "val", word)], [])
 }
 
 fn desugarer_blame(line_no: Int) {

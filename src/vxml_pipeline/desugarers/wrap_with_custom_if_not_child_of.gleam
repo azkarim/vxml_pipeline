@@ -41,11 +41,11 @@ type InnerParam =
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   case param.1 {
     T(..) ->
-      Error(DesugaringError(desugarer_blame(42), "expecting V-node as wrapper"))
+      Error(DesugaringError(desugarer_blame(44), "expecting V-node as wrapper"))
     V(_, _, _, []) -> Ok(param)
     V(..) ->
       Error(DesugaringError(
-        desugarer_blame(46),
+        desugarer_blame(48),
         "wrapper V-node is not childless",
       ))
   }

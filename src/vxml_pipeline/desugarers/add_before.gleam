@@ -37,7 +37,7 @@ type InnerParam {
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   let #(target_tag, inserted_tag) = param
-  InnerParam(target_tag, V(authoring.blame(name, 39), inserted_tag, [], []))
+  InnerParam(target_tag, V(authoring.blame(name, 40), inserted_tag, [], []))
   |> Ok
 }
 

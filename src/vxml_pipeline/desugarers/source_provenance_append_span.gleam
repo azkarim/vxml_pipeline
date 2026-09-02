@@ -45,7 +45,7 @@ type InnerParam {
   )
 }
 
-const b = bl.Des([], name, 47)
+const b = bl.Des([], name, 48)
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   Ok(InnerParam(

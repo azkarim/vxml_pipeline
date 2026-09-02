@@ -38,6 +38,7 @@ import vxml_pipeline/desugarers/append_class_to_children_with_tag
 import vxml_pipeline/desugarers/append_custom
 import vxml_pipeline/desugarers/attribute_drop_prefixes
 import vxml_pipeline/desugarers/auto_generate_child_if_missing_from_attribute
+import vxml_pipeline/desugarers/auto_generate_child_if_missing_from_attribute__batch
 import vxml_pipeline/desugarers/auto_generate_child_if_missing_from_attribute__outside
 import vxml_pipeline/desugarers/auto_generate_child_if_missing_from_first_descendant_of_type
 import vxml_pipeline/desugarers/bridge_whitespace
@@ -50,10 +51,6 @@ import vxml_pipeline/desugarers/check_tags
 import vxml_pipeline/desugarers/concatenate_consecutive_lines_if
 import vxml_pipeline/desugarers/concatenate_text_nodes
 import vxml_pipeline/desugarers/convert_int_attributes_to_float
-import vxml_pipeline/desugarers/counters_prepend_incrementing_attribute
-import vxml_pipeline/desugarers/counters_prepend_incrementing_attribute__outside
-import vxml_pipeline/desugarers/counters_prepend_incrementing_attribute_if_fancy
-import vxml_pipeline/desugarers/counters_substitute
 import vxml_pipeline/desugarers/cut_paste_attribute_from_first_child_to_self
 import vxml_pipeline/desugarers/cut_paste_attribute_from_self_to_child
 import vxml_pipeline/desugarers/cut_paste_attribute_from_self_to_child__outside
@@ -129,6 +126,7 @@ import vxml_pipeline/desugarers/pour_custom_before_first
 import vxml_pipeline/desugarers/prepend
 import vxml_pipeline/desugarers/prepend_append_to_text_children_of
 import vxml_pipeline/desugarers/prepend_attribute
+import vxml_pipeline/desugarers/prepend_attribute__batch
 import vxml_pipeline/desugarers/prepend_attribute__outside
 import vxml_pipeline/desugarers/prepend_attribute_as_first_line
 import vxml_pipeline/desugarers/prepend_attribute_as_text
@@ -159,7 +157,7 @@ import vxml_pipeline/desugarers/rename_attributes
 import vxml_pipeline/desugarers/rename_attributes_by_function
 import vxml_pipeline/desugarers/rename_if_child_of
 import vxml_pipeline/desugarers/rename_if_child_of__batch
-import vxml_pipeline/desugarers/rename_if_child_of_one_of
+import vxml_pipeline/desugarers/rename_if_child_of_any
 import vxml_pipeline/desugarers/rename_if_has_key_value
 import vxml_pipeline/desugarers/rename_if_has_singleton_class_attribute
 import vxml_pipeline/desugarers/rename_if_has_singleton_key_value
@@ -171,6 +169,11 @@ import vxml_pipeline/desugarers/rename_with_class_and_attributes
 import vxml_pipeline/desugarers/replace_in_attribute_values
 import vxml_pipeline/desugarers/replace_multiple_spaces_by_one
 import vxml_pipeline/desugarers/replace_with_arbitrary
+import vxml_pipeline/desugarers/sigil_counters_prepend_incrementing_attribute
+import vxml_pipeline/desugarers/sigil_counters_prepend_incrementing_attribute__batch
+import vxml_pipeline/desugarers/sigil_counters_prepend_incrementing_attribute__outside
+import vxml_pipeline/desugarers/sigil_counters_prepend_incrementing_attribute_if_fancy
+import vxml_pipeline/desugarers/sigil_counters_substitute__outside
 import vxml_pipeline/desugarers/source_provenance_append_img_spans
 import vxml_pipeline/desugarers/source_provenance_append_span
 import vxml_pipeline/desugarers/source_provenance_wrap
@@ -235,6 +238,7 @@ import vxml_pipeline/desugarers/writerly_handles_grand_wrapper_unwrap
 import vxml_pipeline/desugarers/writerly_handles_grand_wrapper_warn_unused
 import vxml_pipeline/desugarers/writerly_handles_materialize_mathjax_tags
 import vxml_pipeline/desugarers/writerly_handles_set_value
+import vxml_pipeline/desugarers/writerly_handles_set_value__batch
 import vxml_pipeline/desugarers/writerly_handles_set_value__outside
 import vxml_pipeline/desugarers/writerly_handles_set_value_if_has_ancestor_else
 import vxml_pipeline/testing
@@ -315,6 +319,8 @@ pub const attribute_drop_prefixes = attribute_drop_prefixes.constructor
 
 pub const auto_generate_child_if_missing_from_attribute = auto_generate_child_if_missing_from_attribute.constructor
 
+pub const auto_generate_child_if_missing_from_attribute__batch = auto_generate_child_if_missing_from_attribute__batch.constructor
+
 pub const auto_generate_child_if_missing_from_attribute__outside = auto_generate_child_if_missing_from_attribute__outside.constructor
 
 pub const auto_generate_child_if_missing_from_first_descendant_of_type = auto_generate_child_if_missing_from_first_descendant_of_type.constructor
@@ -338,14 +344,6 @@ pub const concatenate_consecutive_lines_if = concatenate_consecutive_lines_if.co
 pub const concatenate_text_nodes = concatenate_text_nodes.constructor
 
 pub const convert_int_attributes_to_float = convert_int_attributes_to_float.constructor
-
-pub const counters_prepend_incrementing_attribute = counters_prepend_incrementing_attribute.constructor
-
-pub const counters_prepend_incrementing_attribute__outside = counters_prepend_incrementing_attribute__outside.constructor
-
-pub const counters_prepend_incrementing_attribute_if_fancy = counters_prepend_incrementing_attribute_if_fancy.constructor
-
-pub const counters_substitute = counters_substitute.constructor
 
 pub const cut_paste_attribute_from_first_child_to_self = cut_paste_attribute_from_first_child_to_self.constructor
 
@@ -497,6 +495,8 @@ pub const prepend_append_to_text_children_of = prepend_append_to_text_children_o
 
 pub const prepend_attribute = prepend_attribute.constructor
 
+pub const prepend_attribute__batch = prepend_attribute__batch.constructor
+
 pub const prepend_attribute__outside = prepend_attribute__outside.constructor
 
 pub const prepend_attribute_as_first_line = prepend_attribute_as_first_line.constructor
@@ -557,7 +557,7 @@ pub const rename_if_child_of = rename_if_child_of.constructor
 
 pub const rename_if_child_of__batch = rename_if_child_of__batch.constructor
 
-pub const rename_if_child_of_one_of = rename_if_child_of_one_of.constructor
+pub const rename_if_child_of_any = rename_if_child_of_any.constructor
 
 pub const rename_if_has_key_value = rename_if_has_key_value.constructor
 
@@ -580,6 +580,16 @@ pub const replace_in_attribute_values = replace_in_attribute_values.constructor
 pub const replace_multiple_spaces_by_one = replace_multiple_spaces_by_one.constructor
 
 pub const replace_with_arbitrary = replace_with_arbitrary.constructor
+
+pub const sigil_counters_prepend_incrementing_attribute = sigil_counters_prepend_incrementing_attribute.constructor
+
+pub const sigil_counters_prepend_incrementing_attribute__batch = sigil_counters_prepend_incrementing_attribute__batch.constructor
+
+pub const sigil_counters_prepend_incrementing_attribute__outside = sigil_counters_prepend_incrementing_attribute__outside.constructor
+
+pub const sigil_counters_prepend_incrementing_attribute_if_fancy = sigil_counters_prepend_incrementing_attribute_if_fancy.constructor
+
+pub const sigil_counters_substitute__outside = sigil_counters_substitute__outside.constructor
 
 pub const source_provenance_append_img_spans = source_provenance_append_img_spans.constructor
 
@@ -709,6 +719,8 @@ pub const writerly_handles_materialize_mathjax_tags = writerly_handles_materiali
 
 pub const writerly_handles_set_value = writerly_handles_set_value.constructor
 
+pub const writerly_handles_set_value__batch = writerly_handles_set_value__batch.constructor
+
 pub const writerly_handles_set_value__outside = writerly_handles_set_value__outside.constructor
 
 pub const writerly_handles_set_value_if_has_ancestor_else = writerly_handles_set_value_if_has_ancestor_else.constructor
@@ -752,6 +764,7 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   append_custom.assertive_tests,
   attribute_drop_prefixes.assertive_tests,
   auto_generate_child_if_missing_from_attribute.assertive_tests,
+  auto_generate_child_if_missing_from_attribute__batch.assertive_tests,
   auto_generate_child_if_missing_from_attribute__outside.assertive_tests,
   auto_generate_child_if_missing_from_first_descendant_of_type.assertive_tests,
   bridge_whitespace.assertive_tests,
@@ -764,10 +777,6 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   concatenate_consecutive_lines_if.assertive_tests,
   concatenate_text_nodes.assertive_tests,
   convert_int_attributes_to_float.assertive_tests,
-  counters_prepend_incrementing_attribute.assertive_tests,
-  counters_prepend_incrementing_attribute__outside.assertive_tests,
-  counters_prepend_incrementing_attribute_if_fancy.assertive_tests,
-  counters_substitute.assertive_tests,
   cut_paste_attribute_from_first_child_to_self.assertive_tests,
   cut_paste_attribute_from_self_to_child.assertive_tests,
   cut_paste_attribute_from_self_to_child__outside.assertive_tests,
@@ -843,6 +852,7 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   prepend.assertive_tests,
   prepend_append_to_text_children_of.assertive_tests,
   prepend_attribute.assertive_tests,
+  prepend_attribute__batch.assertive_tests,
   prepend_attribute__outside.assertive_tests,
   prepend_attribute_as_first_line.assertive_tests,
   prepend_attribute_as_text.assertive_tests,
@@ -873,7 +883,7 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   rename_attributes_by_function.assertive_tests,
   rename_if_child_of.assertive_tests,
   rename_if_child_of__batch.assertive_tests,
-  rename_if_child_of_one_of.assertive_tests,
+  rename_if_child_of_any.assertive_tests,
   rename_if_has_key_value.assertive_tests,
   rename_if_has_singleton_class_attribute.assertive_tests,
   rename_if_has_singleton_key_value.assertive_tests,
@@ -885,6 +895,11 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   replace_in_attribute_values.assertive_tests,
   replace_multiple_spaces_by_one.assertive_tests,
   replace_with_arbitrary.assertive_tests,
+  sigil_counters_prepend_incrementing_attribute.assertive_tests,
+  sigil_counters_prepend_incrementing_attribute__batch.assertive_tests,
+  sigil_counters_prepend_incrementing_attribute__outside.assertive_tests,
+  sigil_counters_prepend_incrementing_attribute_if_fancy.assertive_tests,
+  sigil_counters_substitute__outside.assertive_tests,
   source_provenance_append_img_spans.assertive_tests,
   source_provenance_append_span.assertive_tests,
   source_provenance_wrap.assertive_tests,
@@ -949,6 +964,7 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   writerly_handles_grand_wrapper_warn_unused.assertive_tests,
   writerly_handles_materialize_mathjax_tags.assertive_tests,
   writerly_handles_set_value.assertive_tests,
+  writerly_handles_set_value__batch.assertive_tests,
   writerly_handles_set_value__outside.assertive_tests,
   writerly_handles_set_value_if_has_ancestor_else.assertive_tests,
 ]

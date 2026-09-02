@@ -189,7 +189,7 @@ fn accumulator(
           let children = case bridge_lines {
             [] -> core.pour(c1_others_reversed, c2_others)
             _ -> {
-              let bridge_child = T(authoring.blame(name, 191), bridge_lines)
+              let bridge_child = T(authoring.blame(name, 192), bridge_lines)
               core.pour([bridge_child, ..c1_others_reversed], c2_others)
             }
           }

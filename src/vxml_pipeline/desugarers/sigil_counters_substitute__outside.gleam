@@ -475,14 +475,41 @@ fn counter_name_regex() -> Regexp {
   re
 }
 
-fn inner_param_to_transform(inner: InnerParam) -> core.DesugarerTransform {
-  let nodemap: n2t.OneToOneEnterExitStatefulNodemap(State) =
-    n2t.OneToOneEnterExitStatefulNodemap(
-      on_enter: fn(vxml, state) { on_enter(vxml, state, inner) },
-      on_exit: fn(vxml, before, after) { on_exit(vxml, before, after, inner) },
+fn inner_param_to_transform(
+  inner: InnerParam,
+  outside: List(String),
+) -> core.DesugarerTransform {
+  let nodemap: n2t.EarlyReturnOneToOneEnterExitStatefulNodemap(State) =
+    n2t.EarlyReturnOneToOneEnterExitStatefulNodemap(
+      on_enter: fn(vxml, state) {
+        case vxml {
+          V(_, tag, _, _) ->
+            case list.contains(outside, tag) {
+              True -> Ok(#(vxml, state, core.GoBack))
+              False -> {
+                use #(vxml, state) <- on.ok(on_enter(vxml, state, inner))
+                Ok(#(vxml, state, core.Continue))
+              }
+            }
+          _ -> {
+            use #(vxml, state) <- on.ok(on_enter(vxml, state, inner))
+            Ok(#(vxml, state, core.Continue))
+          }
+        }
+      },
+      on_exit: fn(vxml, before, after) {
+        case vxml {
+          V(_, tag, _, _) ->
+            case list.contains(outside, tag) {
+              True -> Ok(#(vxml, before))
+              False -> on_exit(vxml, before, after, inner)
+            }
+          _ -> on_exit(vxml, before, after, inner)
+        }
+      },
       on_text: fn(vxml, state) { on_text(vxml, state, inner) },
     )
-  n2t.one_to_one_enter_exit_stateful_nodemap_2_desugarer_transform(
+  n2t.early_return_one_to_one_enter_exit_stateful_nodemap_2_desugarer_transform(
     nodemap,
     dict.from_list([]),
   )
@@ -492,7 +519,7 @@ type InnerParam {
   InnerParam(counter_regexp: Regexp, counter_name_regexp: Regexp)
 }
 
-pub const name = "counters_substitute"
+pub const name = "sigil_counters_substitute__outside"
 
 // fn desugarer_blame(line_no: Int) { bl.Des([], name, line_no) }
 
@@ -504,9 +531,9 @@ pub const name = "counters_substitute"
 ///
 ///          (::|..)(++|--|øø)<counterName>
 ///
-/// inside text lines and attribute values by string
-/// value of the counter, while incrementing/decrementing
-/// counters along the way.
+/// inside text lines and attribute values outside configured
+/// forbidden subtrees by the string value of the counter, while
+/// incrementing/decrementing counters along the way.
 ///
 /// Counter names must match `[A-Za-z]+`. A counter must have
 /// been initialized by the time
@@ -552,13 +579,16 @@ pub const name = "counters_substitute"
 ///        ..øø<counterName>
 ///
 /// has no effect on the document.
-pub fn constructor() -> Desugarer {
-  authoring.no_param_desugarer(
+pub fn constructor(outside: List(String)) -> Desugarer {
+  authoring.no_param_desugarer_with_outside(
     name: name,
-    transform: inner_param_to_transform(InnerParam(
-      counter_regex(),
-      counter_name_regex(),
-    )),
+    outside: outside,
+    transform: fn(outside) {
+      inner_param_to_transform(
+        InnerParam(counter_regex(), counter_name_regex()),
+        outside,
+      )
+    },
   )
 }
 
@@ -566,9 +596,10 @@ pub fn constructor() -> Desugarer {
 // 🌊🌊🌊 tests 🌊🌊🌊🌊
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
 
-fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
+fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParamWithOutside) {
   [
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=QCounter -3
@@ -582,7 +613,31 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'aa-4;bb'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: ["pre"],
+      source: "
+                <> root
+                  counter=Counter
+                  <> pre
+                    counter=bad-name
+                    <>
+                      '::++Counter'
+                  <>
+                    '::++Counter'
+              ",
+      expected: "
+                <> root
+                  counter=Counter
+                  <> pre
+                    counter=bad-name
+                    <>
+                      '::++Counter'
+                  <>
+                    '1'
+              ",
+    ),
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=QCounter -3
@@ -600,7 +655,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'GooseMan;-9;;.-12@hoverboard'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=QCounter -3
@@ -618,7 +674,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     '-2.-1 K&W'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=MyCounter 5 2
@@ -636,7 +693,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     '7.9'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=TestCounter -1
@@ -652,7 +710,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     '-1-2'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-uppercase=ChapCtr
@@ -670,7 +729,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'C'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-lowercase=SecCtr
@@ -688,7 +748,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'c'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-roman-uppercase=RomCtr
@@ -708,7 +769,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'IV'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-roman-lowercase=RomCtr
@@ -728,7 +790,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'iv'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-unary=StarCtr *
@@ -746,7 +809,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     '***'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-uppercase=AppCtr
@@ -808,7 +872,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'Y'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=QCounter  -3
@@ -822,7 +887,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     '-2'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-unary=StarCtr  *
@@ -836,7 +902,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     '*'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter-uppercase=Upper 24
@@ -854,7 +921,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'y z aa'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=Scoped 10
@@ -876,7 +944,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     'outside 11'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=CounterName
@@ -890,7 +959,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
                     '1_2'
                 ",
     ),
-    testing.data_no_param(
+    testing.data_no_param_with_outside(
+      outside: [],
       source: "
                 <> root
                   counter=Counter
@@ -928,5 +998,9 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
 }
 
 pub fn assertive_tests() {
-  testing.collection_no_param(name, assertive_tests_data(), constructor)
+  testing.collection_no_param_with_outside(
+    name,
+    assertive_tests_data(),
+    constructor,
+  )
 }

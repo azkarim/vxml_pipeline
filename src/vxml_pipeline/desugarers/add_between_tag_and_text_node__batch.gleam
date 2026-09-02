@@ -44,7 +44,7 @@ type InnerParam =
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   param
   |> list.map(fn(p) {
-    #(p.0, core.v_attrs_constructor(authoring.blame(name, 46), p.1, p.2))
+    #(p.0, core.v_attrs_constructor(authoring.blame(name, 47), p.1, p.2))
   })
   |> core.dict_from_list
 }

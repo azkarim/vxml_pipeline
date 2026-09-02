@@ -49,7 +49,7 @@ type InnerParam {
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   InnerParam(
     param.0,
-    Attr(authoring.blame(name, 51), param.1, param.2),
+    Attr(authoring.blame(name, 52), param.1, param.2),
     param.3,
   )
   |> Ok

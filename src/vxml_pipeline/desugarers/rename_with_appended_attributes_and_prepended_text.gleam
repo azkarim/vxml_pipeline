@@ -51,7 +51,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
         let attrs_converted =
           list.map(attrs, fn(attr) {
             let #(key, value) = attr
-            vxml.Attr(desugarer_blame(53), key, value)
+            vxml.Attr(desugarer_blame(54), key, value)
           })
         #(old_tag, #(new_tag, text, attrs_converted))
       },

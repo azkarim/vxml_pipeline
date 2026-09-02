@@ -65,6 +65,22 @@ let pipeline = [
 Each constructor validates or prepares its parameters when it creates the
 `Desugarer`. The resulting transform is then ready to be applied repeatedly.
 
+### Desugarer naming conventions
+
+A desugarer whose name ends in `__batch` accepts a list as its parameter and
+performs the same operation for each item in that list. This can express a
+group of related transformations with one constructor call and, where the
+implementation permits, one tree traversal.
+
+A desugarer whose name ends in `__outside` has a constructor with a second
+argument: a list of tag names that identify forbidden subtrees. The desugarer
+does not operate inside subtrees rooted at any of those tags.
+
+The variants can be combined, as in `name__batch__outside`, but the library
+does not provide every possible variant of every desugarer. `__batch`,
+`__outside`, and combined variants are generally added only after their use has
+proved useful in an application.
+
 ### Authoring a desugarer
 
 Client-defined desugarers are ordinary Gleam modules. Their constructors accept
@@ -419,6 +435,15 @@ Options include filtering selectors, monitor configuration, tracking and dump
 factories, timing-table configuration, warning and artifact reporting,
 long-running-step reports, output-table widths, and stage dumps.
 
+`pipeline_table_default_desugarer_name_columns`,
+`pipeline_table_default_param_columns`, and
+`pipeline_table_default_outside_columns` set the corresponding maximum column
+widths in the `--table` output. Each width has a minimum of 10 columns.
+
+`pipeline_timing_table_default_desugarer_name_columns` and
+`pipeline_timing_table_default_duration_columns` do the same for the
+desugarer-name and duration columns in the `--times` output.
+
 ## Command-line integration
 
 The package can parse its standard renderer options together with a declared
@@ -516,6 +541,27 @@ The built-in help describes all accepted forms. The principal options are:
 
 Use `--track-help` for the selector-window, step-range, and output-formatting
 syntax accepted by `--track`.
+
+`--table` accepts up to three positional maximum widths, for the desugarer
+name, parameter, and `outside` columns respectively:
+
+```text
+--table [<name columns> [<param columns> [<outside columns>]]]
+```
+
+Use `-` to retain the configured default at a position. Trailing defaults may
+be omitted, so `--table - 80` changes only the parameter column. Numeric
+values smaller than 10 are raised to 10.
+
+`--times` follows the same convention for its desugarer-name and duration
+columns:
+
+```text
+--times [<name columns> [<duration columns>]]
+```
+
+For example, `--times - 80` changes only the duration column. Trailing
+defaults may again be omitted, and numeric values have a minimum of 10.
 
 ## Testing desugarers
 

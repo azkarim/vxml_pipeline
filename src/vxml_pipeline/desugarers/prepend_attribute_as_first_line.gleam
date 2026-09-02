@@ -51,7 +51,7 @@ fn nodemap(vxml: VXML, inner: InnerParam) -> VXML {
     V(blame, tag, _, children) if tag == inner.0 -> {
       case core.v_first_attr_with_key(vxml, inner.1) {
         Some(Attr(_, _, value)) if value != "" -> {
-          let line = Line(desugarer_blame(53), value)
+          let line = Line(desugarer_blame(54), value)
           let children = case list.any(children, core.is_t) {
             True -> {
               let #(before, after) =

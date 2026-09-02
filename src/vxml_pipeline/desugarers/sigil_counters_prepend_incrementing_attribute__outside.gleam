@@ -11,7 +11,7 @@ import vxml_pipeline/core.{
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-pub const name = "counters_prepend_incrementing_attribute__outside"
+pub const name = "sigil_counters_prepend_incrementing_attribute__outside"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
@@ -19,7 +19,7 @@ pub const name = "counters_prepend_incrementing_attribute__outside"
 
 /// Prepends a temporary counter-increment instruction attr
 /// outside configured subtrees. The named counter must already
-/// be in scope. Run `counters_substitute` afterward, then delete
+/// be in scope. Run `sigil_counters_substitute__outside` afterward, then delete
 /// the temporary `_` attr when it is no longer useful.
 pub fn constructor(param: Param, outside: List(String)) -> Desugarer {
   authoring.desugarer_with_outside(
@@ -63,7 +63,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   })
   Ok(#(
     target_tag,
-    Attr(desugarer_blame(43), "_", counter_name <> " ::++" <> counter_name),
+    Attr(desugarer_blame(66), "_", counter_name <> " ::++" <> counter_name),
     traffic_light,
   ))
 }

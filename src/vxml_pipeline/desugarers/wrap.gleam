@@ -38,7 +38,7 @@ type InnerParam {
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   let #(target, wrapper) = param
-  Ok(InnerParam(target, V(desugarer_blame(39), wrapper, [], [])))
+  Ok(InnerParam(target, V(desugarer_blame(41), wrapper, [], [])))
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {

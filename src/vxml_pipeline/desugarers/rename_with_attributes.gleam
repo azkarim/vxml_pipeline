@@ -39,7 +39,7 @@ type InnerParam =
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   let attrs =
     param.2
-    |> list.map(fn(x) { Attr(desugarer_blame(41), x.0, x.1) })
+    |> list.map(fn(x) { Attr(desugarer_blame(42), x.0, x.1) })
   Ok(#(param.0, param.1, attrs))
 }
 

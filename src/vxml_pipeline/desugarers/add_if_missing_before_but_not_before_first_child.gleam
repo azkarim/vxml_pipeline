@@ -37,7 +37,7 @@ type InnerParam {
 }
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  InnerParam(param.0, V(authoring.blame(name, 39), param.1, [], []), param.1)
+  InnerParam(param.0, V(authoring.blame(name, 40), param.1, [], []), param.1)
   |> Ok
 }
 

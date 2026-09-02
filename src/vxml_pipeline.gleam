@@ -35,8 +35,6 @@ import vxml_pipeline/tracking.{type Selector}
 
 pub const help_message_margin = 3
 
-const default_times_table_char_width = 90
-
 const renderer_runner_margin = 2
 
 const tracking_progress_interval = 10
@@ -489,7 +487,12 @@ pub type RendererOptions(fragment_classifier) {
     verbose: Bool,
     artifacts: Bool,
     steps_table: Bool,
-    profiling_table: Option(Int),
+    pipeline_table_default_desugarer_name_columns: Int,
+    pipeline_table_default_param_columns: Int,
+    pipeline_table_default_outside_columns: Int,
+    profiling_table: Bool,
+    pipeline_timing_table_default_desugarer_name_columns: Int,
+    pipeline_timing_table_default_duration_columns: Int,
     monitor_interactive_mode: Bool,
     warnings: Bool,
     report_long_running_desugarers: Bool,
@@ -516,7 +519,12 @@ pub fn vanilla_options() -> RendererOptions(fragment_classifier) {
     verbose: False,
     artifacts: False,
     steps_table: False,
-    profiling_table: None,
+    pipeline_table_default_desugarer_name_columns: 70,
+    pipeline_table_default_param_columns: 65,
+    pipeline_table_default_outside_columns: 45,
+    profiling_table: False,
+    pipeline_timing_table_default_desugarer_name_columns: 70,
+    pipeline_timing_table_default_duration_columns: 90,
     monitor_interactive_mode: False,
     warnings: False,
     report_long_running_desugarers: True,
@@ -575,7 +583,8 @@ pub type ParsedCLIArguments {
     vxml_validation_monitor_factory: Option(MonitorFactory),
     monitor_interactive_mode: Bool,
     table: Option(Bool),
-    times: Option(Int),
+    table_columns: Option(#(Option(Int), Option(Int), Option(Int))),
+    times: Option(#(Option(Int), Option(Int))),
     verbose: Option(Bool),
     artifacts: Option(Bool),
     warnings: Option(Bool),
@@ -628,6 +637,7 @@ fn empty_parsed_cli_arguments() -> ParsedCLIArguments {
     vxml_validation_monitor_factory: None,
     monitor_interactive_mode: False,
     table: None,
+    table_columns: None,
     times: None,
     verbose: None,
     artifacts: None,
@@ -701,12 +711,13 @@ pub fn basic_cli_usage(header: String) {
     "--artifacts",
     "  -> subset of '--verbose' to show which files were printed",
     "",
-    "--table",
-    "  -> include a printout of the pipeline steps",
+    "--table [<column widths>]",
+    "  -> include a printout of the pipeline steps; run with",
+    "     '--esoteric' for column-width syntax",
     "",
-    "--times [<cols=" <> ins(default_times_table_char_width) <> ">]",
-    "  -> include performance table (how long it takes each desugarer",
-    "     to run) using <cols> columns",
+    "--times [<column widths>]",
+    "  -> include a timing table; run with '--esoteric' for",
+    "     column-width syntax",
     "",
   ])
 }
@@ -820,6 +831,24 @@ pub fn track_cli_usage(header: String) {
 
 pub fn advanced_cli_usage(header: String) {
   print_cli_usage(header, [
+    "--table [<name cols> [<param cols> [<outside cols>]]]",
+    "  -> set maximum widths for the name, param, and outside columns",
+    "     of the pipeline table; omitted values retain their defaults",
+    "     and '-' retains the default at that position; every numeric",
+    "     width has a minimum of 10 columns",
+    "",
+    "     --table - 80       change only the param-column width",
+    "     --table 40 - 30    change name and outside widths",
+    "",
+    "--times [<name cols> [<duration cols>]]",
+    "  -> set maximum widths for the desugarer-name and duration",
+    "     columns of the timing table; omitted values retain their",
+    "     defaults and '-' retains the default at that position; every",
+    "     numeric width has a minimum of 10 columns",
+    "",
+    "     --times - 80       change only the duration-column width",
+    "     --times 40         change only the name-column width",
+    "",
     "--prettier-off",
     "  -> disable the prettifier",
     "",
@@ -1004,6 +1033,7 @@ pub opaque type CommandLineError {
   SelectorValues(String)
   OnlyValues(String)
   StepNoValues(String)
+  TableValues(String)
   TimesValues(String)
 }
 
@@ -1158,12 +1188,7 @@ fn process_command_line_arguments_(
             Some(_) -> Error(DuplicateOption(option))
           })
           use arg <- on.ok(parse_times_args(values))
-          Ok(
-            ParsedCLIArguments(
-              ..arguments,
-              times: arg |> core.with_default(default_times_table_char_width),
-            ),
-          )
+          Ok(ParsedCLIArguments(..arguments, times: Some(arg)))
         }
 
         "--input-dir" -> {
@@ -1218,11 +1243,16 @@ fn process_command_line_arguments_(
           |> Ok
         }
 
-        "--table" ->
-          case list.is_empty(values) {
-            True -> Ok(ParsedCLIArguments(..arguments, table: Some(True)))
-            False -> Error(UnexpectedArgumentsToOption("--table"))
-          }
+        "--table" -> {
+          use columns <- on.ok(parse_table_args(values))
+          Ok(
+            ParsedCLIArguments(
+              ..arguments,
+              table: Some(True),
+              table_columns: Some(columns),
+            ),
+          )
+        }
 
         "--no-table" ->
           case list.is_empty(values) {
@@ -2317,19 +2347,73 @@ fn combine_vxml_monitor_outputs(
 
 fn parse_times_args(
   values: List(String),
-) -> Result(Option(Int), CommandLineError) {
+) -> Result(#(Option(Int), Option(Int)), CommandLineError) {
   case values {
-    [] -> Ok(None)
-    [x] -> {
-      use x <- on.error_ok(int.parse(x), fn(_) {
-        Error(TimesValues(
-          "could not parse --times argument '" <> x <> "' as integer",
-        ))
-      })
-      let x = int.max(x, 1)
-      Ok(Some(x))
+    [] -> Ok(#(None, None))
+    [name] -> {
+      use name <- on.ok(parse_times_column(name))
+      Ok(#(name, None))
+    }
+    [name, duration] -> {
+      use name <- on.ok(parse_times_column(name))
+      use duration <- on.ok(parse_times_column(duration))
+      Ok(#(name, duration))
     }
     _ -> Error(UnexpectedArgumentsToOption("--times"))
+  }
+}
+
+fn parse_times_column(value: String) -> Result(Option(Int), CommandLineError) {
+  case value {
+    "-" -> Ok(None)
+    value ->
+      value
+      |> int.parse
+      |> result.map(fn(value) { Some(int.max(value, 10)) })
+      |> result.map_error(fn(_) {
+        TimesValues(
+          "could not parse --times argument '" <> value <> "' as integer or -",
+        )
+      })
+  }
+}
+
+fn parse_table_column(value: String) -> Result(Option(Int), CommandLineError) {
+  case value {
+    "-" -> Ok(None)
+    value ->
+      value
+      |> int.parse
+      |> result.map(fn(value) { Some(int.max(value, 10)) })
+      |> result.map_error(fn(_) {
+        TableValues(
+          "could not parse --table argument '" <> value <> "' as integer or -",
+        )
+      })
+  }
+}
+
+fn parse_table_args(
+  values: List(String),
+) -> Result(#(Option(Int), Option(Int), Option(Int)), CommandLineError) {
+  case values {
+    [] -> Ok(#(None, None, None))
+    [name] -> {
+      use name <- on.ok(parse_table_column(name))
+      Ok(#(name, None, None))
+    }
+    [name, param] -> {
+      use name <- on.ok(parse_table_column(name))
+      use param <- on.ok(parse_table_column(param))
+      Ok(#(name, param, None))
+    }
+    [name, param, outside] -> {
+      use name <- on.ok(parse_table_column(name))
+      use param <- on.ok(parse_table_column(param))
+      use outside <- on.ok(parse_table_column(outside))
+      Ok(#(name, param, outside))
+    }
+    _ -> Error(TooManyArgumentsToOption("--table"))
   }
 }
 
@@ -2385,11 +2469,37 @@ pub fn amend_renderer_options_by_arguments(
   options: RendererOptions(fragment_classifier),
   arguments: ParsedCLIArguments,
 ) -> RendererOptions(fragment_classifier) {
+  let table_columns =
+    arguments.table_columns
+    |> option.unwrap(#(None, None, None))
+  let timing_table_columns =
+    arguments.times
+    |> option.unwrap(#(None, None))
   RendererOptions(
     verbose: option.unwrap(arguments.verbose, options.verbose),
     artifacts: option.unwrap(arguments.artifacts, options.artifacts),
     steps_table: option.unwrap(arguments.table, options.steps_table),
-    profiling_table: option.or(arguments.times, options.profiling_table),
+    pipeline_table_default_desugarer_name_columns: option.unwrap(
+      table_columns.0,
+      options.pipeline_table_default_desugarer_name_columns,
+    ),
+    pipeline_table_default_param_columns: option.unwrap(
+      table_columns.1,
+      options.pipeline_table_default_param_columns,
+    ),
+    pipeline_table_default_outside_columns: option.unwrap(
+      table_columns.2,
+      options.pipeline_table_default_outside_columns,
+    ),
+    profiling_table: arguments.times != None || options.profiling_table,
+    pipeline_timing_table_default_desugarer_name_columns: option.unwrap(
+      timing_table_columns.0,
+      options.pipeline_timing_table_default_desugarer_name_columns,
+    ),
+    pipeline_timing_table_default_duration_columns: option.unwrap(
+      timing_table_columns.1,
+      options.pipeline_timing_table_default_duration_columns,
+    ),
     monitor_interactive_mode: {
       options.monitor_interactive_mode || arguments.monitor_interactive_mode
     },
@@ -3345,7 +3455,13 @@ fn run_renderer_(
   let prettifier_mode = parameters.prettifier_behavior
 
   case options.steps_table {
-    True -> pr.print_pipeline(renderer.pipeline)
+    True ->
+      pr.print_pipeline(
+        renderer.pipeline,
+        options.pipeline_table_default_desugarer_name_columns,
+        options.pipeline_table_default_param_columns,
+        options.pipeline_table_default_outside_columns,
+      )
     False -> Nil
   }
 
@@ -3495,11 +3611,13 @@ fn run_renderer_(
     timestamp.difference(t0, t1) |> duration.to_seconds |> float.to_precision(3)
 
   case options.profiling_table {
-    None -> {
+    False -> {
       io.println("  ..ended pipeline (" <> ins(seconds) <> "s)")
     }
 
-    Some(total_chars) -> {
+    True -> {
+      let duration_columns =
+        int.max(options.pipeline_timing_table_default_duration_columns, 10)
       let all_seconds = durations |> list.map(duration.to_seconds)
       let max_secs = case list.max(all_seconds, float.compare) {
         Ok(max_secs) -> max_secs
@@ -3510,7 +3628,7 @@ fn run_renderer_(
         _ -> 1.0
       }
       let one_hundreth_seconds_num_bars =
-        int.to_float(total_chars) /. num_hundreth_seconds
+        int.to_float(duration_columns) /. num_hundreth_seconds
       let scale =
         list.repeat(Nil, float.round(num_hundreth_seconds) + 1)
         |> list.map_fold(0.0, fn(x, _) { #(x +. 0.01, x) })
@@ -3534,7 +3652,12 @@ fn run_renderer_(
           |> float.round
           |> pr.blocks
         })
-      pr.pipeline_timing_table(renderer.pipeline, bars, scale)
+      pr.pipeline_timing_table(
+        renderer.pipeline,
+        bars,
+        scale,
+        options.pipeline_timing_table_default_desugarer_name_columns,
+      )
       |> pr.print_lines_at_indent(2)
       io.println("  ...ended pipeline in " <> ins(seconds) <> "s")
     }

@@ -51,7 +51,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   Ok(InnerParam(
     param.0,
     param.1,
-    Attr(desugarer_blame(44), param.2, param.3),
+    Attr(desugarer_blame(54), param.2, param.3),
     param.4,
   ))
 }

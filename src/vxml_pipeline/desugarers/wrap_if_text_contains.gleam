@@ -52,7 +52,7 @@ fn nodemap(vxml: VXML, inner: InnerParam) -> VXML {
     V(_, tag, _, children) if tag == inner.0 ->
       case list.any(children, core.descendant_text_contains(_, inner.2)) {
         False -> vxml
-        True -> V(desugarer_blame(54), inner.1, [], [vxml])
+        True -> V(desugarer_blame(55), inner.1, [], [vxml])
       }
     _ -> vxml
   }

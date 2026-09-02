@@ -9,8 +9,8 @@ import vxml_pipeline/testing
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   #(
     param.0,
-    Line(desugarer_blame(27), param.1.0),
-    Line(desugarer_blame(28), param.1.1),
+    Line(desugarer_blame(12), param.1.0),
+    Line(desugarer_blame(13), param.1.1),
   )
   |> Ok
 }

@@ -50,13 +50,13 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
     let contents2 = string.split(t2, "\n")
     let v1 =
       T(
-        desugarer_blame(52),
-        list.map(contents1, fn(content) { Line(desugarer_blame(53), content) }),
+        desugarer_blame(53),
+        list.map(contents1, fn(content) { Line(desugarer_blame(54), content) }),
       )
     let v2 =
       T(
-        desugarer_blame(57),
-        list.map(contents2, fn(content) { Line(desugarer_blame(58), content) }),
+        desugarer_blame(58),
+        list.map(contents2, fn(content) { Line(desugarer_blame(59), content) }),
       )
     #(tag, #(v1, v2))
   })

@@ -46,7 +46,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   |> list.map(fn(triple) {
     #(
       triple.0,
-      core.v_attrs_constructor(authoring.blame(name, 48), triple.1, triple.2),
+      core.v_attrs_constructor(authoring.blame(name, 49), triple.1, triple.2),
     )
   })
   |> core.dict_from_list

@@ -69,7 +69,7 @@ fn nodemap(vxml: VXML, inner: InnerParam) -> #(VXML, TrafficLight) {
 
       #(
         V(..vxml, children: [
-          V(authoring.blame(name, 71), inner.child_tag, [], [
+          V(authoring.blame(name, 72), inner.child_tag, [], [
             T(attr.blame, [
               Line(
                 attr.blame |> bl.advance(string.length(inner.attr_key) + 1),

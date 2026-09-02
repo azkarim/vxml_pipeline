@@ -41,7 +41,7 @@ type InnerParam =
   #(String, Attr, TrafficLight)
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  #(param.0, Attr(desugarer_blame(43), param.1, param.2), param.3)
+  #(param.0, Attr(desugarer_blame(44), param.1, param.2), param.3)
   |> Ok
 }
 
