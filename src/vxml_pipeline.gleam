@@ -83,7 +83,7 @@ pub opaque type MonitorFactory {
 }
 
 type VxmlValidationMode {
-  ValidateAllVxml(warn_about_attribute_boundary_whitespace: Bool)
+  ValidateAllVxml(warn_about_leading_attribute_whitespace: Bool)
   ValidateTextLinesOnly
 }
 
@@ -866,7 +866,7 @@ pub fn advanced_cli_usage(header: String) {
     "",
     "--validate-vxml [-warn-attribute-whitespace | -lines-only]",
     "  -> validate VXML before and after every pipeline step; optionally",
-    "     warn about attribute boundary whitespace, or only reject empty",
+    "     warn about leading attribute whitespace, or only reject empty",
     "     text nodes",
     "",
     "--dump-assembled",
@@ -2571,22 +2571,22 @@ fn blame_location_suffix(blame: Blame) -> String {
   }
 }
 
-fn attribute_boundary_whitespace_warnings(vxml: VXML) -> List(String) {
+fn leading_attribute_whitespace_warnings(vxml: VXML) -> List(String) {
   case vxml {
     T(..) -> []
     V(_, _, attrs, children) -> {
       let local_warnings =
         attrs
-        |> list.filter(fn(attr) { string.trim(attr.val) != attr.val })
+        |> list.filter(fn(attr) { string.trim_start(attr.val) != attr.val })
         |> list.map(fn(attr) {
           "attribute "
           <> ins(attr.key)
-          <> " has leading or trailing whitespace"
+          <> " has leading whitespace"
           <> blame_location_suffix(attr.blame)
         })
       list.append(
         local_warnings,
-        children |> list.flat_map(attribute_boundary_whitespace_warnings),
+        children |> list.flat_map(leading_attribute_whitespace_warnings),
       )
     }
   }
@@ -2595,11 +2595,11 @@ fn attribute_boundary_whitespace_warnings(vxml: VXML) -> List(String) {
 /// Builds a monitor that validates VXML before and after every pipeline step.
 ///
 /// Invalid VXML stops the pipeline. When
-/// `warn_about_attribute_boundary_whitespace` is `True`, the monitor also
-/// emits feedback for attribute values with leading or trailing whitespace.
-/// Such whitespace is valid VXML and is not otherwise rejected.
+/// `warn_about_leading_attribute_whitespace` is `True`, the monitor also emits
+/// feedback for attribute values with leading whitespace. Leading whitespace
+/// is valid VXML and is not otherwise rejected.
 pub fn vxml_validation_monitor(
-  warn_about_attribute_boundary_whitespace: Bool,
+  warn_about_leading_attribute_whitespace: Bool,
 ) -> Monitor {
   new_monitor("validate-vxml", [], fn(vxml, previous_warnings, _) {
     use _ <- on.error_ok(vp.validate(vxml), fn(error) {
@@ -2608,11 +2608,11 @@ pub fn vxml_validation_monitor(
         vxml_validation_problem_message(problem) <> blame_location_suffix(blame),
       )
     })
-    let warnings = case warn_about_attribute_boundary_whitespace {
+    let warnings = case warn_about_leading_attribute_whitespace {
       False -> []
       True ->
         vxml
-        |> attribute_boundary_whitespace_warnings
+        |> leading_attribute_whitespace_warnings
         |> list.unique
     }
     let new_warnings =
@@ -2992,9 +2992,9 @@ fn make_monitors(
           )
         VxmlValidationMonitorFactory(mode) ->
           case mode {
-            ValidateAllVxml(warn_about_attribute_boundary_whitespace) ->
+            ValidateAllVxml(warn_about_leading_attribute_whitespace) ->
               Ok(vxml_validation_monitor(
-                warn_about_attribute_boundary_whitespace,
+                warn_about_leading_attribute_whitespace,
               ))
             ValidateTextLinesOnly -> Ok(empty_text_node_monitor())
           }

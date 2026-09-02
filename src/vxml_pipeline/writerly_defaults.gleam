@@ -55,11 +55,12 @@ pub fn default_writerly_parser(
 
 pub fn default_writerly_emitter(
   fragment: OutputFragment(z, VXML),
-) -> Result(#(OutputFragment(z, List(OutputLine)), Feedback), b) {
-  let lines =
-    fragment.payload
-    |> wl.vxml_to_writerlys
-    |> wl.writerlys_to_output_lines
+) -> Result(
+  #(OutputFragment(z, List(OutputLine)), Feedback),
+  wl.SerializationError,
+) {
+  use writerlys <- result.try(wl.vxml_to_writerlys(fragment.payload))
+  use lines <- result.try(wl.writerlys_to_output_lines(writerlys))
 
   Ok(#(OutputFragment(..fragment, payload: lines), NoFeedback))
 }

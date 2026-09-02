@@ -392,13 +392,13 @@ implemented as monitors. Applications can install VXML validation directly:
 
 ```gleam
 vp.vxml_validation_monitor(
-  False, // do not warn about boundary whitespace in attribute values
+  False, // do not warn about leading whitespace in attribute values
 )
 ```
 
 Invalid VXML stops the pipeline at the first invalid state. Passing `True`
-also reports leading or trailing attribute-value whitespace as monitor
-feedback; that whitespace remains valid VXML.
+also reports leading attribute-value whitespace as monitor feedback. Leading
+whitespace remains valid VXML; trailing spaces and tabs are invalid.
 
 `empty_text_node_monitor()` is a narrower monitor that rejects only text nodes
 with no lines. It does not validate tags, attributes, or individual line

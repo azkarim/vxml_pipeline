@@ -1,12 +1,12 @@
 name = "vxml_pipeline"
-version = "0.2.0"
+version = "0.2.1"
 description = "Run and debug VXML transformation pipelines."
 licences = ["MIT"]
 repository = { type = "github", user = "vistuleB", repo = "vxml_pipeline" }
 
 [dependencies]
-vxml = ">= 1.0.6 and < 2.0.0"
-writerly = ">= 0.1.0 and < 1.0.0"
+vxml = ">= 1.0.9 and < 2.0.0"
+writerly = ">= 0.2.0 and < 1.0.0"
 
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 gleam_regexp = ">= 1.0.0 and < 2.0.0"

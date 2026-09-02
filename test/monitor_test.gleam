@@ -90,20 +90,35 @@ pub fn main() {
       pipeline_ux_options(),
     )
 
-  let whitespace_is_valid =
+  let leading_whitespace_is_valid =
     vxml.V(
       blame.no_blame,
       "root",
       [
-        vxml.Attr(blame.no_blame, "class", " padded "),
+        vxml.Attr(blame.no_blame, "class", " padded"),
       ],
       [],
     )
   let assert Ok(_) =
     ds.run_pipeline(
-      whitespace_is_valid,
+      leading_whitespace_is_valid,
       [],
       [ds.vxml_validation_monitor(True)],
+      pipeline_ux_options(),
+    )
+
+  let trailing_whitespace_is_invalid =
+    vxml.V(
+      blame.no_blame,
+      "root",
+      [vxml.Attr(blame.no_blame, "class", "padded ")],
+      [],
+    )
+  let assert Error(ds.PipelineMonitorError(_)) =
+    ds.run_pipeline(
+      trailing_whitespace_is_invalid,
+      [],
+      [ds.vxml_validation_monitor(False)],
       pipeline_ux_options(),
     )
 
