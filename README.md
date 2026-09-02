@@ -408,27 +408,34 @@ contents. The corresponding command-line form is
 
 ## Renderer parameters and options
 
-`RendererParameters` contains values required for a run:
+`RendererParameters` contains values required for a run. After parsing command-line
+arguments, construct the application's defaults and amend them with any standard
+options supplied by the user:
 
 ```gleam
-vp.RendererParameters(
-  input_dir: "src/content",
-  output_dir: "build/output",
-  prettifier_behavior: vp.PrettifierOff,
-)
+let parameters =
+  vp.RendererParameters(
+    input_dir: "book1/files",
+    output_dir: "./public",
+    prettifier_behavior: vp.PrettifierOff,
+  )
+  |> vp.amend_renderer_parameters_by_arguments(arguments)
 ```
 
 `RendererOptions` controls optional behavior. Start from
-`vanilla_options()` and update only the relevant fields:
+`vanilla_options()`, update only the application's relevant fields, and then
+apply the command-line arguments:
 
 ```gleam
 let options =
   vp.RendererOptions(
     ..vp.vanilla_options(),
-    verbose: True,
     artifacts: True,
-    warnings: True,
+    profiling_table: True,
+    output_lines_table_default_blame_columns: 50,
+    output_lines_table_default_comment_columns: 0,
   )
+  |> vp.amend_renderer_options_by_arguments(arguments)
 ```
 
 Options include filtering selectors, monitor configuration, tracking and dump
@@ -498,15 +505,10 @@ pub fn main() {
     handle_cli_error,
   )
 
-  // Construct and run the application renderer here.
+  // Respond to any remaining local argument options here.
+
+  // Construct and run the renderer here.
 }
-```
-
-The application can apply parsed standard values to its defaults with:
-
-```gleam
-vp.amend_renderer_parameters_by_arguments(parameters, arguments)
-vp.amend_renderer_options_by_arguments(options, arguments)
 ```
 
 `CLIError` distinguishes argument parsing, `.last-command` reading, decoding
@@ -524,6 +526,18 @@ unambiguous encoding of the effective argument list in `.last-command`.
 The read and write functions use the current working directory. Applications
 normally write only a command that proceeds to ordinary rendering; help,
 maintenance, and local one-off operations can return before the write.
+
+This mechanism also integrates with editor build tasks. For example, a VS Code
+task associated with Writerly source files can run the following command in the
+project directory:
+
+```sh
+gleam run -- --last-command
+```
+
+An editor build command or keyboard shortcut can then repeat the most recent
+render—with its input directory, output directory, and other arguments—without
+requiring the author to return to a terminal and reconstruct the command.
 
 ### Standard diagnostic options
 
