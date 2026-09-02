@@ -44,8 +44,8 @@ pub type DesugarerTransform =
 pub type Desugarer {
   Desugarer(
     name: String,
-    ...
     transform: DesugarerTransform,
+    ...
   )
 }
 ```
