@@ -238,7 +238,8 @@ input path
 
 Applications provide the stages that are specific to their input format and
 output format. The package supplies defaults for common single-file XML,
-Writerly, HTML, JSX, file-writing, and Prettier workflows.
+[Writerly](https://hex.pm/packages/writerly), HTML, JSX, file-writing, and
+Prettier workflows.
 
 ### Building a renderer
 
@@ -296,9 +297,9 @@ files. Prettifier modes are:
 
 ## Writerly input
 
-Writerly support is kept in a separate adapter module because the renderer
-core operates on `InputLine`, `OutputLine`, and VXML rather than on Writerly
-syntax directly:
+[Writerly](https://hex.pm/packages/writerly) support is kept in a separate
+adapter module because the renderer core operates on `InputLine`, `OutputLine`,
+and VXML rather than on its syntax directly:
 
 ```gleam
 import vxml_pipeline/writerly_defaults as wd
@@ -308,8 +309,8 @@ wd.default_writerly_parser
 wd.default_writerly_emitter
 ```
 
-The Writerly assembler accepts either a file or a directory tree. It reports
-the assembled directory tree as verbose feedback and respects the renderer's
+The assembler accepts either a file or a directory tree. It reports the
+assembled directory tree as verbose feedback and respects the renderer's
 path-selection options.
 
 ## Feedback
@@ -619,7 +620,8 @@ directory.
 - `vxml_pipeline/tracking` and `vxml_pipeline/selectors` — VXML selection and monitor
   output.
 - `vxml_pipeline/line_wrapping` — blame-preserving line wrapping.
-- `vxml_pipeline/writerly_defaults` — Writerly assembler, parser, and emitter
+- `vxml_pipeline/writerly_defaults` —
+  [Writerly](https://hex.pm/packages/writerly) assembler, parser, and emitter
   adapters.
 
 ## License
