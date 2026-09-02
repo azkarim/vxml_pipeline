@@ -1,20 +1,26 @@
+import gleam/list
+import gleam/regexp
+import on
 import vxml.{type Attr, type VXML, Attr, V}
+import vxml/blame as bl
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type ContextualVXMLCondition, type Desugarer, type DesugarerTransform,
-  type DesugaringError, type TrafficLight, Continue,
+  type DesugaringError, type TrafficLight, Continue, DesugaringError,
 }
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-pub const name = "prepend_counter_incrementing_attribute_if_fancy"
+pub const name = "counters_prepend_incrementing_attribute_if_fancy"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
-/// Prepends a counter-increment attribute when a
-/// contextual condition is satisfied.
+/// Prepends a temporary counter-increment instruction attr when
+/// a contextual condition is satisfied. The named counter must
+/// already be in scope. Run `counters_substitute` afterward, then
+/// delete the temporary `_` attr when it is no longer useful.
 pub fn constructor(param: Param) -> Desugarer {
   authoring.desugarer(
     name: name,
@@ -46,13 +52,28 @@ type InnerParam {
 }
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  InnerParam(
-    param.0,
-    Attr(desugarer_blame(44), "_", param.1 <> " ::++" <> param.1),
-    param.2,
-    param.3,
-  )
-  |> Ok
+  let #(target_tag, counter_name, condition, traffic_light) = param
+  use <- on.false_true(core.valid_tag(target_tag), fn() {
+    Error(DesugaringError(
+      bl.no_blame,
+      "invalid target tag name '" <> target_tag <> "'",
+    ))
+  })
+  let assert Ok(counter_name_regexp) = regexp.from_string("^[A-Za-z]+$")
+  use <- on.false_true(regexp.check(counter_name_regexp, counter_name), fn() {
+    Error(DesugaringError(
+      bl.no_blame,
+      "counter name must contain only ASCII letters; found '"
+        <> counter_name
+        <> "'",
+    ))
+  })
+  Ok(InnerParam(
+    target_tag,
+    Attr(desugarer_blame(44), "_", counter_name <> " ::++" <> counter_name),
+    condition,
+    traffic_light,
+  ))
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
@@ -115,7 +136,29 @@ fn desugarer_blame(line_no: Int) {
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
 
 fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
-  []
+  [
+    testing.data(
+      param: #(
+        "Item",
+        "ItemCounter",
+        fn(_, _, previous_siblings, _, _) { !list.is_empty(previous_siblings) },
+        core.GoBack,
+      ),
+      source: "
+                <> root
+                  <> Item
+                  <> Item
+                    <> Item
+                ",
+      expected: "
+                <> root
+                  <> Item
+                  <> Item
+                    _=ItemCounter ::++ItemCounter
+                    <> Item
+                ",
+    ),
+  ]
 }
 
 pub fn assertive_tests() {

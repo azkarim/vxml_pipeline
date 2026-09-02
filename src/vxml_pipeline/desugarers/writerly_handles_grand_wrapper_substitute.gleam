@@ -99,16 +99,18 @@ fn hyperlink_constructor(
       "handle occurrence when local path is not defined",
     ))
   })
-  let #(tag, attrs) = case target_path == our_path {
+  let in_page = target_path == our_path
+  let #(tag, attrs) = case in_page {
     True -> #(inner.in_page_tag, inner.in_page_attrs)
     False -> #(inner.out_page_tag, inner.out_page_attrs)
   }
   let page = page || page_by_default
-  let target_path = case page {
-    True -> target_path
-    False -> target_path <> "#" <> id
+  let href = case page, in_page {
+    True, _ -> target_path
+    False, True -> "#" <> id
+    False, False -> target_path <> "#" <> id
   }
-  let attrs = [Attr(blame, "href", target_path), ..attrs]
+  let attrs = [Attr(blame, "href", href), ..attrs]
   Ok(V(blame, tag, attrs, [T(blame, [Line(blame, value)])]))
 }
 
@@ -330,29 +332,70 @@ fn process_lines(
   Ok(#(vxmls, warnings, used))
 }
 
-fn grand_wrapper_load(state: State, children: List(VXML)) -> State {
-  let handles =
-    list.fold(children, dict.new(), fn(acc, child) {
-      case child {
-        V(_, "Handle", _, _) -> {
-          let assert Some(name) = core.v_first_attr_with_key(child, "name")
-          let assert Some(page) = core.v_first_attr_with_key(child, "page")
-          let assert Some(value) = core.v_first_attr_with_key(child, "value")
-          let assert Some(id) = core.v_first_attr_with_key(child, "id")
-          let assert Some(path) = core.v_first_attr_with_key(child, "path")
-          let assert Ok(value) = handle_syntax.decode_value(value.val)
-          let page = case page.val {
-            "true" -> True
-            "false" -> False
-            _ -> panic as "malformed Handle page value"
-          }
-          dict.insert(acc, name.val, #(page, value, id.val, path.val))
-        }
-        _ -> acc
-      }
-    })
+fn malformed_handle_element(child: VXML, detail: String) -> DesugaringError {
+  DesugaringError(child.blame, "malformed Handle element: " <> detail)
+}
 
-  State(..state, handles: handles)
+fn insert_handle_element(
+  handles: HandlesDict,
+  child: VXML,
+  inner: InnerParam,
+) -> Result(HandlesDict, DesugaringError) {
+  let name = core.v_first_attr_with_key(child, "name")
+  let page = core.v_first_attr_with_key(child, "page")
+  let value = core.v_first_attr_with_key(child, "value")
+  let id = core.v_first_attr_with_key(child, "id")
+  let path = core.v_first_attr_with_key(child, "path")
+  use #(name, page, value, id, path) <- on.ok(case name, page, value, id, path {
+    Some(name), Some(page), Some(value), Some(id), Some(path) ->
+      Ok(#(name, page, value, id, path))
+    _, _, _, _, _ ->
+      Error(malformed_handle_element(
+        child,
+        "expected name, page, value, id, and path attributes",
+      ))
+  })
+  use <- on.false_true(
+    regexp.check(inner.dictionary_handle_name_regexp, name.val),
+    fn() {
+      Error(malformed_handle_element(child, "invalid name '" <> name.val <> "'"))
+    },
+  )
+  use page <- on.ok(case page.val {
+    "true" -> Ok(True)
+    "false" -> Ok(False)
+    value ->
+      Error(malformed_handle_element(
+        child,
+        "page must be 'true' or 'false'; found '" <> value <> "'",
+      ))
+  })
+  use value <- on.ok(
+    handle_syntax.decode_value(value.val)
+    |> result.map_error(fn(_) {
+      malformed_handle_element(child, "value must have form <<value>>")
+    }),
+  )
+  use <- on.true_false(dict.has_key(handles, name.val), fn() {
+    Error(malformed_handle_element(child, "duplicate name '" <> name.val <> "'"))
+  })
+  Ok(dict.insert(handles, name.val, #(page, value, id.val, path.val)))
+}
+
+fn grand_wrapper_load(
+  state: State,
+  children: List(VXML),
+  inner: InnerParam,
+) -> Result(State, DesugaringError) {
+  use handles <- on.ok(
+    list.try_fold(children, dict.new(), fn(handles, child) {
+      case child {
+        V(_, "Handle", _, _) -> insert_handle_element(handles, child, inner)
+        _ -> Ok(handles)
+      }
+    }),
+  )
+  Ok(State(..state, handles: handles))
 }
 
 fn mark_used(used: Set(String), names: List(String)) -> Set(String) {
@@ -501,11 +544,11 @@ fn v_before_transform(
   inner: InnerParam,
 ) -> Result(#(VXML, State, List(DesugaringWarning)), DesugaringError) {
   let assert V(_, tag, _, children) = vxml
-  let state = case tag {
-    "GrandWrapper" -> grand_wrapper_load(state, children)
-    "Handle" -> state
-    _ -> update_state_path(state, vxml, inner)
-  }
+  use state <- on.ok(case tag {
+    "GrandWrapper" -> grand_wrapper_load(state, children, inner)
+    "Handle" -> Ok(state)
+    _ -> Ok(update_state_path(state, vxml, inner))
+  })
   let state = case
     state.inside_a_link_tag || !list.contains(inner.link_tags, tag)
   {
@@ -602,6 +645,8 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   let handle_name = "[\\p{L}\\p{N}\\p{M}_.:'\\-\\^]*[\\p{L}\\p{N}\\p{M}_'\\^]"
+  let assert Ok(dictionary_handle_name_regexp) =
+    regexp.from_string("^" <> handle_name <> "$")
   let assert Ok(handle_candidates_regexp) =
     regexp.from_string(
       "(\\\\*)(>>)(" <> handle_name <> "(?:#page)?(?:#decoy:[0-9]+)?(?:##)?)",
@@ -616,6 +661,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
     link_tags: param.5,
     math_tags: param.6,
     handle_candidates_regexp: handle_candidates_regexp,
+    dictionary_handle_name_regexp: dictionary_handle_name_regexp,
   ))
 }
 
@@ -670,10 +716,11 @@ type InnerParam {
     link_tags: List(String),
     math_tags: List(String),
     handle_candidates_regexp: Regexp,
+    dictionary_handle_name_regexp: Regexp,
   )
 }
 
-pub const name = "handles_grand_wrapper_substitute"
+pub const name = "writerly_handles_grand_wrapper_substitute"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
@@ -704,7 +751,7 @@ fn desugarer_blame(line_no: Int) {
 ///
 /// On its way out it adds a boolean `used` attr to every `Handle` child.
 ///
-/// (see `handles_grand_wrapper_warn_unused`, which consumes
+/// (see `writerly_handles_grand_wrapper_warn_unused`, which consumes
 /// that column).
 ///
 /// Inside any descendant of a tag named in the last param entry
@@ -721,6 +768,9 @@ fn desugarer_blame(line_no: Int) {
 /// An unassigned handle falls back to its #decoy: value if present and
 /// otherwise becomes plain 'undefined handle: <name>' text, warning in
 /// both cases.
+///
+/// The #page, #decoy:<digits>, and terminal ## usage suffixes are
+/// VXML Pipeline extensions rather than parts of a Writerly handle name.
 pub fn constructor(param: Param) -> Desugarer {
   authoring.desugarer(
     name: name,
@@ -775,7 +825,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
               <>
                 'some text with '
               <> InChapterLink
-                href=./ch1.html#_23-super-id
+                href=#_23-super-id
                 class=handle-in-chapter-link
                 <>
                   'AA'
@@ -1105,7 +1155,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
               <>
                 '('
               <> a
-                href=./ch1.html#eq-id
+                href=#eq-id
                 <>
                   '2'
               <>
@@ -1180,7 +1230,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
               <>
                 'see \\'
               <> a
-                href=./ch1.html#eq-id
+                href=#eq-id
                 <>
                   '2'
               <>
@@ -1290,7 +1340,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
               <>
                 'see '
               <> a
-                href=./ch1.html#id
+                href=#id
                 <>
                   'value'
       ",

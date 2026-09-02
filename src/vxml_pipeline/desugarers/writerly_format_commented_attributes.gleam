@@ -7,7 +7,7 @@ import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 import writerly
 
-pub const name = "format_writerly_commented_attributes"
+pub const name = "writerly_format_commented_attributes"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️

@@ -1,6 +1,7 @@
 import gleam/list
+import gleam/option.{Some}
+import gleam/regexp.{type Regexp, Match}
 import gleam/result
-import gleam/string
 import vxml.{type Attr, type VXML, Attr, V}
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
@@ -10,7 +11,7 @@ import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-pub const name = "set_handle_value_if_has_ancestor_else"
+pub const name = "writerly_handles_set_value_if_has_ancestor_else"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
@@ -45,6 +46,7 @@ type InnerParam {
     ancestor_tag: String,
     inside_value: String,
     outside_value: String,
+    handle_regexp: Regexp,
   )
 }
 
@@ -55,7 +57,11 @@ type State =
   AncestorHasBeenSeen
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  Ok(InnerParam(param.0, param.1, param.2, param.3))
+  let assert Ok(handle_regexp) =
+    regexp.from_string(
+      "^(" <> handle_syntax.decorated_name_pattern <> ")(?: <<(.*)>>)?$",
+    )
+  Ok(InnerParam(param.0, param.1, param.2, param.3, handle_regexp))
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
@@ -94,13 +100,8 @@ fn map_attr(
 ) -> Result(Attr, DesugaringError) {
   case attr.key {
     "handle" ->
-      case attr.val |> string.split_once(" ") {
-        Ok(#(_, handle_value)) ->
-          case handle_syntax.decode_value(handle_value) {
-            Ok(_) -> Ok(attr)
-            Error(_) -> Error(malformed_handle_error(attr))
-          }
-        Error(Nil) -> {
+      case regexp.scan(inner.handle_regexp, attr.val) {
+        [Match(_, [Some(_)]), ..] -> {
           let appended_value = case state {
             True -> inner.inside_value
             False -> inner.outside_value
@@ -112,13 +113,20 @@ fn map_attr(
             ),
           )
         }
+        [Match(_, [Some(_), _]), ..] -> Ok(attr)
+        _ -> Error(malformed_handle_error(attr))
       }
     _ -> Ok(attr)
   }
 }
 
 fn malformed_handle_error(attr: Attr) -> DesugaringError {
-  DesugaringError(attr.blame, "assigned handle value must have form <<value>>")
+  DesugaringError(
+    attr.blame,
+    "handle attr must have form <name> or <name> <<value>>; found: “"
+      <> attr.val
+      <> "”",
+  )
 }
 
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
@@ -126,7 +134,31 @@ fn malformed_handle_error(attr: Attr) -> DesugaringError {
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
 
 fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
-  []
+  [
+    testing.data(
+      param: #("Item", "Appendix", "appendix value", "ordinary value"),
+      source: "
+        <> root
+          <> Appendix
+            <> Item
+              handle=inside
+          <> Item
+            handle=outside#page
+          <> Item
+            handle=assigned <<existing>>
+      ",
+      expected: "
+        <> root
+          <> Appendix
+            <> Item
+              handle=inside <<appendix value>>
+          <> Item
+            handle=outside#page <<ordinary value>>
+          <> Item
+            handle=assigned <<existing>>
+      ",
+    ),
+  ]
 }
 
 pub fn assertive_tests() {

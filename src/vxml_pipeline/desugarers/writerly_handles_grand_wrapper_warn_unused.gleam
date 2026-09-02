@@ -91,7 +91,7 @@ fn collect_unused_ids(
             Error(DesugaringError(
               child.blame,
               "Handle element is malformed or has no valid 'used' attribute "
-                <> "(run handles_grand_wrapper_substitute first)",
+                <> "(run writerly_handles_grand_wrapper_substitute first)",
             ))
         }
       }
@@ -170,7 +170,7 @@ type Param =
 type InnerParam =
   Param
 
-pub const name = "handles_grand_wrapper_warn_unused"
+pub const name = "writerly_handles_grand_wrapper_warn_unused"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
@@ -178,7 +178,7 @@ pub const name = "handles_grand_wrapper_warn_unused"
 
 /// Expects a document whose root is a 'GrandWrapper'
 /// carrying structured `Handle` children whose boolean
-/// `used` attrs were added by `handles_grand_wrapper_substitute`.
+/// `used` attrs were added by `writerly_handles_grand_wrapper_substitute`.
 ///
 /// Emits one DesugaringWarning per handle whose
 /// `used` attr is `false` and whose id points to a

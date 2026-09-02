@@ -9,9 +9,9 @@ pipelines.
 The package provides two related execution layers:
 
 - `run_pipeline` applies an ordered list of named VXML transformations to one
-  VXML tree.
+  VXML tree
 - `run_renderer` runs a complete file-oriented render: assemble, parse,
-  filter, transform, split, emit, write, and optionally prettify.
+  filter, transform, split, emit, write, and optionally prettify
 
 The package also includes reusable desugarers, pipeline monitors, command-line
 argument handling, local-desugarer tooling, and a test framework for
@@ -26,13 +26,20 @@ gleam add vxml_pipeline
 ## Desugarers
 
 The atomic unit encapsulating a named VXML-to-VXML transformation is a
-*Desugarer*. It accepts one VXML tree and either returns a transformed VXML
+_desugarer_. It accepts one VXML tree and either returns a transformed VXML
 tree with warnings or returns a `DesugaringError`:
 
 ```gleam
+pub type DesugaringError {
+  DesugaringError(blame: Blame, message: String)
+}
+
+pub type DesugaringWarning {
+  DesugaringWarning(blame: Blame, message: String)
+}
+
 pub type DesugarerTransform =
-  fn(VXML) ->
-    Result(#(VXML, List(DesugaringWarning)), DesugaringError)
+  fn(VXML) -> Result(#(VXML, List(DesugaringWarning)), DesugaringError)
 
 pub type Desugarer {
   Desugarer(

@@ -45,24 +45,32 @@ fn try_read_handle(
 ) -> Result(#(String, String, Bool, String), DesugaringError) {
   assert attr.key == "handle"
   case regexp.scan(inner.handle_regexp, attr.val) {
-    [Match(_, [Some(name), value]), ..] -> {
-      let value = option.unwrap(value, "")
-      let #(name, decorators) = case string.split_once(name, "#") {
-        Ok(#(name, decorators)) -> #(name, "#" <> decorators)
-        Error(_) -> #(name, "")
-      }
-      let page =
-        decorators
-        |> string.split("#")
-        |> list.contains("page")
-      Ok(#(name, decorators, page, value))
-    }
+    [Match(_, [Some(name)]), ..] -> Ok(handle_parts(name, ""))
+    [Match(_, [Some(name), value]), ..] ->
+      Ok(handle_parts(name, option.unwrap(value, "")))
     _ ->
       Error(DesugaringError(
         attr.blame,
-        "handle attr not in form <name> <<value>>; found: “" <> attr.val <> "”",
+        "handle attr must have form <name> or <name> <<value>>; found: “"
+          <> attr.val
+          <> "”",
       ))
   }
+}
+
+fn handle_parts(
+  name: String,
+  value: String,
+) -> #(String, String, Bool, String) {
+  let #(name, decorators) = case string.split_once(name, "#") {
+    Ok(#(name, decorators)) -> #(name, "#" <> decorators)
+    Error(_) -> #(name, "")
+  }
+  let page =
+    decorators
+    |> string.split("#")
+    |> list.contains("page")
+  #(name, decorators, page, value)
 }
 
 fn try_insert_handle(
@@ -175,7 +183,7 @@ fn on_enter(
           use id <- on.none_some(core.v_first_attr_with_key(vxml, "id"), fn() {
             Error(DesugaringError(
               vxml.blame,
-              "element with a handle attr has no id attr; run handles_add_ids first",
+              "element with a handle attr has no id attr; run writerly_handles_add_ids first",
             ))
           })
           use #(handles, attrs) <- on.ok(attrs_fold(
@@ -233,7 +241,7 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   let assert Ok(handle_regexp) =
     regexp.from_string(
-      "^(" <> handle_syntax.decorated_name_pattern <> ") <<(.*)>>$",
+      "^(" <> handle_syntax.decorated_name_pattern <> ")(?: <<(.*)>>)?$",
     )
   Ok(InnerParam(path_key: param, handle_regexp: handle_regexp))
 }
@@ -269,7 +277,7 @@ type InnerParam {
   InnerParam(path_key: String, handle_regexp: Regexp)
 }
 
-pub const name = "handles_grand_wrapper_generate_dictionary"
+pub const name = "writerly_handles_grand_wrapper_generate_dictionary"
 
 fn desugarer_blame(line_no: Int) {
   bl.Des([], name, line_no)
@@ -279,7 +287,9 @@ fn desugarer_blame(line_no: Int) {
 // 🏖️🏖️ Desugarer 🏖️🏖️
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️🏖️
 
-/// Traverses the tree. Expects `handle` attrs to be in the form:
+/// Traverses the tree. Accepts `handle` attrs in either form:
+///
+/// `handle=<name>`
 ///
 /// `handle=<name> <<value>>`
 ///
@@ -370,6 +380,30 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
                 id=_24-other-id
                 <>
                   '$y^2$'
+      ",
+    ),
+    testing.data(
+      param: "local_path",
+      source: "
+        <> root
+          local_path=./ch3.html
+          <> Section
+            handle=bare-name#page
+            id=_25-bare-id
+      ",
+      expected: "
+        <> GrandWrapper
+          <> Handle
+            name=bare-name
+            decorators=#page
+            page=true
+            value=<<>>
+            id=_25-bare-id
+            path=./ch3.html
+          <> root
+            local_path=./ch3.html
+            <> Section
+              id=_25-bare-id
       ",
     ),
   ]

@@ -171,7 +171,7 @@ type Param =
 type InnerParam =
   #(Regexp, Regexp)
 
-pub const name = "handles_generate_v_definitions_from_t_definitions"
+pub const name = "writerly_handles_generate_v_definitions_from_t_definitions"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
@@ -214,9 +214,8 @@ pub const name = "handles_generate_v_definitions_from_t_definitions"
 /// Any backslash between the name or decorators and '##<<'
 /// breaks the required adjacency, so the text is preserved.
 ///
-/// Intended to run before handles_add_ids so that the
-/// generated 'handle=' attrs are in the strict
-/// 'name <<value>>' format that handles_add_ids expects.
+/// Intended to run before writerly_handles_add_ids so that generated
+/// definitions receive ids with other handle-bearing elements.
 pub fn constructor() -> Desugarer {
   let assert Ok(inner) = param_to_inner_param(Nil)
   authoring.no_param_desugarer(

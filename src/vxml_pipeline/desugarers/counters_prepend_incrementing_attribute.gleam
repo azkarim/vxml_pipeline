@@ -1,20 +1,25 @@
+import gleam/regexp
+import on
 import vxml.{type Attr, type VXML, Attr, V}
+import vxml/blame as bl
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
-  type TrafficLight, Continue, GoBack,
+  type TrafficLight, Continue, DesugaringError, GoBack,
 }
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-pub const name = "prepend_counter_incrementing_attribute"
+pub const name = "counters_prepend_incrementing_attribute"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
-/// Prepends a counter-increment instruction attribute to
-/// matching elements.
+/// Prepends a temporary counter-increment instruction attr to
+/// matching elements. The named counter must already be in
+/// scope. Run `counters_substitute` afterward, then delete the
+/// temporary `_` attr when it is no longer useful for inspection.
 pub fn constructor(param: Param) -> Desugarer {
   authoring.desugarer(
     name: name,
@@ -38,12 +43,27 @@ type InnerParam =
   #(String, Attr, TrafficLight)
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  #(
-    param.0,
-    Attr(desugarer_blame(42), "_", param.1 <> " ::++" <> param.1),
-    param.2,
-  )
-  |> Ok
+  let #(target_tag, counter_name, traffic_light) = param
+  use <- on.false_true(core.valid_tag(target_tag), fn() {
+    Error(DesugaringError(
+      bl.no_blame,
+      "invalid target tag name '" <> target_tag <> "'",
+    ))
+  })
+  let assert Ok(counter_name_regexp) = regexp.from_string("^[A-Za-z]+$")
+  use <- on.false_true(regexp.check(counter_name_regexp, counter_name), fn() {
+    Error(DesugaringError(
+      bl.no_blame,
+      "counter name must contain only ASCII letters; found '"
+        <> counter_name
+        <> "'",
+    ))
+  })
+  Ok(#(
+    target_tag,
+    Attr(desugarer_blame(42), "_", counter_name <> " ::++" <> counter_name),
+    traffic_light,
+  ))
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {

@@ -1,6 +1,7 @@
 import gleam/list
+import gleam/option.{Some}
+import gleam/regexp.{type Regexp, Match}
 import gleam/result
-import gleam/string
 import vxml.{type Attr, type VXML, Attr, V}
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
@@ -11,7 +12,7 @@ import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-pub const name = "set_handle_value__outside"
+pub const name = "writerly_handles_set_value__outside"
 
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
@@ -39,11 +40,21 @@ type Param =
     TrafficLight,
   )
 
-type InnerParam =
-  Param
+type InnerParam {
+  InnerParam(
+    target_tag: String,
+    value: String,
+    traffic_light: TrafficLight,
+    handle_regexp: Regexp,
+  )
+}
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  Ok(param)
+  let assert Ok(handle_regexp) =
+    regexp.from_string(
+      "^(" <> handle_syntax.decorated_name_pattern <> ")(?: <<(.*)>>)?$",
+    )
+  Ok(InnerParam(param.0, param.1, param.2, handle_regexp))
 }
 
 fn inner_param_to_transform(
@@ -65,10 +76,10 @@ fn nodemap(
       case list.contains(outside, tag) {
         True -> Ok(#(vxml, GoBack))
         False ->
-          case tag == inner.0 {
+          case tag == inner.target_tag {
             True -> {
               use attrs <- result.try(list.try_map(attrs, map_attr(_, inner)))
-              Ok(#(V(..vxml, attrs: attrs), inner.2))
+              Ok(#(V(..vxml, attrs: attrs), inner.traffic_light))
             }
             False -> Ok(#(vxml, Continue))
           }
@@ -80,26 +91,28 @@ fn nodemap(
 fn map_attr(attr: Attr, inner: InnerParam) -> Result(Attr, DesugaringError) {
   case attr.key {
     "handle" ->
-      case attr.val |> string.split_once(" ") {
-        Ok(#(_, handle_value)) ->
-          case handle_syntax.decode_value(handle_value) {
-            Ok(_) -> Ok(attr)
-            Error(_) -> Error(malformed_handle_error(attr))
-          }
-        Error(_) ->
+      case regexp.scan(inner.handle_regexp, attr.val) {
+        [Match(_, [Some(_)]), ..] ->
           Ok(
             Attr(
               ..attr,
-              val: attr.val <> " " <> handle_syntax.encode_value(inner.1),
+              val: attr.val <> " " <> handle_syntax.encode_value(inner.value),
             ),
           )
+        [Match(_, [Some(_), _]), ..] -> Ok(attr)
+        _ -> Error(malformed_handle_error(attr))
       }
     _ -> Ok(attr)
   }
 }
 
 fn malformed_handle_error(attr: Attr) -> DesugaringError {
-  DesugaringError(attr.blame, "assigned handle value must have form <<value>>")
+  DesugaringError(
+    attr.blame,
+    "handle attr must have form <name> or <name> <<value>>; found: “"
+      <> attr.val
+      <> "”",
+  )
 }
 
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
@@ -107,7 +120,32 @@ fn malformed_handle_error(attr: Attr) -> DesugaringError {
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
 
 fn assertive_tests_data() -> List(testing.AssertiveTestDataWithOutside(Param)) {
-  []
+  [
+    testing.data_with_outside(
+      param: #("Section", "generated value", Continue),
+      outside: ["Code"],
+      source: "
+        <> root
+          <> Section
+            handle=first#page
+          <> Section
+            handle=second <<existing>>
+          <> Code
+            <> Section
+              handle=not/validated
+      ",
+      expected: "
+        <> root
+          <> Section
+            handle=first#page <<generated value>>
+          <> Section
+            handle=second <<existing>>
+          <> Code
+            <> Section
+              handle=not/validated
+      ",
+    ),
+  ]
 }
 
 pub fn assertive_tests() {

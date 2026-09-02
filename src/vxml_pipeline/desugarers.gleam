@@ -50,7 +50,10 @@ import vxml_pipeline/desugarers/check_tags
 import vxml_pipeline/desugarers/concatenate_consecutive_lines_if
 import vxml_pipeline/desugarers/concatenate_text_nodes
 import vxml_pipeline/desugarers/convert_int_attributes_to_float
-import vxml_pipeline/desugarers/counters_substitute_and_assign_handles
+import vxml_pipeline/desugarers/counters_prepend_incrementing_attribute
+import vxml_pipeline/desugarers/counters_prepend_incrementing_attribute__outside
+import vxml_pipeline/desugarers/counters_prepend_incrementing_attribute_if_fancy
+import vxml_pipeline/desugarers/counters_substitute
 import vxml_pipeline/desugarers/cut_paste_attribute_from_first_child_to_self
 import vxml_pipeline/desugarers/cut_paste_attribute_from_self_to_child
 import vxml_pipeline/desugarers/cut_paste_attribute_from_self_to_child__outside
@@ -74,7 +77,7 @@ import vxml_pipeline/desugarers/detokenize_href_surroundings
 import vxml_pipeline/desugarers/echo_v_if_see_text
 import vxml_pipeline/desugarers/ensure_attribute_value_starts_with
 import vxml_pipeline/desugarers/ensure_attribute_value_starts_with_prefix
-import vxml_pipeline/desugarers/expand_info_attribute
+import vxml_pipeline/desugarers/expand_emmet_like_attribute
 import vxml_pipeline/desugarers/expel_initial_last_backward_forward
 import vxml_pipeline/desugarers/extract_starting_and_ending_spaces
 import vxml_pipeline/desugarers/filter_nodes_by_key_values
@@ -94,15 +97,9 @@ import vxml_pipeline/desugarers/fold_contents_into_text_if
 import vxml_pipeline/desugarers/fold_custom_into_text
 import vxml_pipeline/desugarers/fold_into_text
 import vxml_pipeline/desugarers/fold_into_text__batch
-import vxml_pipeline/desugarers/format_writerly_commented_attributes
 import vxml_pipeline/desugarers/free_children
 import vxml_pipeline/desugarers/free_children__batch
 import vxml_pipeline/desugarers/group_consecutive_children__outside
-import vxml_pipeline/desugarers/handles_add_ids
-import vxml_pipeline/desugarers/handles_generate_v_definitions_from_t_definitions
-import vxml_pipeline/desugarers/handles_grand_wrapper_generate_dictionary
-import vxml_pipeline/desugarers/handles_grand_wrapper_substitute
-import vxml_pipeline/desugarers/handles_grand_wrapper_warn_unused
 import vxml_pipeline/desugarers/identity
 import vxml_pipeline/desugarers/insert_attribute_as_text
 import vxml_pipeline/desugarers/insert_attribute_value_at_first_child_start
@@ -120,7 +117,6 @@ import vxml_pipeline/desugarers/last_to_first_concatenate_text_nodes
 import vxml_pipeline/desugarers/line_rewrap_no1__outside
 import vxml_pipeline/desugarers/line_rewrap_no2__outside
 import vxml_pipeline/desugarers/markdown_link_closing_handrolled_splitter__outside
-import vxml_pipeline/desugarers/math_label_with_handle_to_mathjax_tag
 import vxml_pipeline/desugarers/merge_parent_attributes_into_child
 import vxml_pipeline/desugarers/naive_unescaped_split_and_replace__outside
 import vxml_pipeline/desugarers/normalize_br_in_pre
@@ -139,9 +135,6 @@ import vxml_pipeline/desugarers/prepend_attribute_as_text
 import vxml_pipeline/desugarers/prepend_attribute_as_wrapped_text
 import vxml_pipeline/desugarers/prepend_attribute_as_wrapped_text_else_custom
 import vxml_pipeline/desugarers/prepend_attribute_if
-import vxml_pipeline/desugarers/prepend_counter_incrementing_attribute
-import vxml_pipeline/desugarers/prepend_counter_incrementing_attribute__outside
-import vxml_pipeline/desugarers/prepend_counter_incrementing_attribute_if_fancy
 import vxml_pipeline/desugarers/prepend_custom
 import vxml_pipeline/desugarers/prepend_text_node
 import vxml_pipeline/desugarers/prepend_text_node__batch
@@ -178,9 +171,6 @@ import vxml_pipeline/desugarers/rename_with_class_and_attributes
 import vxml_pipeline/desugarers/replace_in_attribute_values
 import vxml_pipeline/desugarers/replace_multiple_spaces_by_one
 import vxml_pipeline/desugarers/replace_with_arbitrary
-import vxml_pipeline/desugarers/set_handle_value
-import vxml_pipeline/desugarers/set_handle_value__outside
-import vxml_pipeline/desugarers/set_handle_value_if_has_ancestor_else
 import vxml_pipeline/desugarers/source_provenance_append_img_spans
 import vxml_pipeline/desugarers/source_provenance_append_span
 import vxml_pipeline/desugarers/source_provenance_wrap
@@ -190,7 +180,6 @@ import vxml_pipeline/desugarers/split_last_line_before_suffix
 import vxml_pipeline/desugarers/strip_delimiters_inside
 import vxml_pipeline/desugarers/strip_delimiters_inside_if
 import vxml_pipeline/desugarers/substitute_class
-import vxml_pipeline/desugarers/substitute_counters
 import vxml_pipeline/desugarers/supplement_class
 import vxml_pipeline/desugarers/surround_elements_by
 import vxml_pipeline/desugarers/table_marker
@@ -237,6 +226,17 @@ import vxml_pipeline/desugarers/wrap_if_not_child_of
 import vxml_pipeline/desugarers/wrap_if_text_contains
 import vxml_pipeline/desugarers/wrap_with_custom_if_child_of
 import vxml_pipeline/desugarers/wrap_with_custom_if_not_child_of
+import vxml_pipeline/desugarers/writerly_format_commented_attributes
+import vxml_pipeline/desugarers/writerly_handles_add_ids
+import vxml_pipeline/desugarers/writerly_handles_generate_v_definitions_from_t_definitions
+import vxml_pipeline/desugarers/writerly_handles_grand_wrapper_generate_dictionary
+import vxml_pipeline/desugarers/writerly_handles_grand_wrapper_substitute
+import vxml_pipeline/desugarers/writerly_handles_grand_wrapper_unwrap
+import vxml_pipeline/desugarers/writerly_handles_grand_wrapper_warn_unused
+import vxml_pipeline/desugarers/writerly_handles_materialize_mathjax_tags
+import vxml_pipeline/desugarers/writerly_handles_set_value
+import vxml_pipeline/desugarers/writerly_handles_set_value__outside
+import vxml_pipeline/desugarers/writerly_handles_set_value_if_has_ancestor_else
 import vxml_pipeline/testing
 
 pub const absorb_backward_one = absorb_backward_one.constructor
@@ -339,7 +339,13 @@ pub const concatenate_text_nodes = concatenate_text_nodes.constructor
 
 pub const convert_int_attributes_to_float = convert_int_attributes_to_float.constructor
 
-pub const counters_substitute_and_assign_handles = counters_substitute_and_assign_handles.constructor
+pub const counters_prepend_incrementing_attribute = counters_prepend_incrementing_attribute.constructor
+
+pub const counters_prepend_incrementing_attribute__outside = counters_prepend_incrementing_attribute__outside.constructor
+
+pub const counters_prepend_incrementing_attribute_if_fancy = counters_prepend_incrementing_attribute_if_fancy.constructor
+
+pub const counters_substitute = counters_substitute.constructor
 
 pub const cut_paste_attribute_from_first_child_to_self = cut_paste_attribute_from_first_child_to_self.constructor
 
@@ -387,7 +393,7 @@ pub const ensure_attribute_value_starts_with = ensure_attribute_value_starts_wit
 
 pub const ensure_attribute_value_starts_with_prefix = ensure_attribute_value_starts_with_prefix.constructor
 
-pub const expand_info_attribute = expand_info_attribute.constructor
+pub const expand_emmet_like_attribute = expand_emmet_like_attribute.constructor
 
 pub const expel_initial_last_backward_forward = expel_initial_last_backward_forward.constructor
 
@@ -427,23 +433,11 @@ pub const fold_into_text = fold_into_text.constructor
 
 pub const fold_into_text__batch = fold_into_text__batch.constructor
 
-pub const format_writerly_commented_attributes = format_writerly_commented_attributes.constructor
-
 pub const free_children = free_children.constructor
 
 pub const free_children__batch = free_children__batch.constructor
 
 pub const group_consecutive_children__outside = group_consecutive_children__outside.constructor
-
-pub const handles_add_ids = handles_add_ids.constructor
-
-pub const handles_generate_v_definitions_from_t_definitions = handles_generate_v_definitions_from_t_definitions.constructor
-
-pub const handles_grand_wrapper_generate_dictionary = handles_grand_wrapper_generate_dictionary.constructor
-
-pub const handles_grand_wrapper_substitute = handles_grand_wrapper_substitute.constructor
-
-pub const handles_grand_wrapper_warn_unused = handles_grand_wrapper_warn_unused.constructor
 
 pub const identity = identity.constructor
 
@@ -478,8 +472,6 @@ pub const line_rewrap_no1__outside = line_rewrap_no1__outside.constructor
 pub const line_rewrap_no2__outside = line_rewrap_no2__outside.constructor
 
 pub const markdown_link_closing_handrolled_splitter__outside = markdown_link_closing_handrolled_splitter__outside.constructor
-
-pub const math_label_with_handle_to_mathjax_tag = math_label_with_handle_to_mathjax_tag.constructor
 
 pub const merge_parent_attributes_into_child = merge_parent_attributes_into_child.constructor
 
@@ -516,12 +508,6 @@ pub const prepend_attribute_as_wrapped_text = prepend_attribute_as_wrapped_text.
 pub const prepend_attribute_as_wrapped_text_else_custom = prepend_attribute_as_wrapped_text_else_custom.constructor
 
 pub const prepend_attribute_if = prepend_attribute_if.constructor
-
-pub const prepend_counter_incrementing_attribute = prepend_counter_incrementing_attribute.constructor
-
-pub const prepend_counter_incrementing_attribute__outside = prepend_counter_incrementing_attribute__outside.constructor
-
-pub const prepend_counter_incrementing_attribute_if_fancy = prepend_counter_incrementing_attribute_if_fancy.constructor
 
 pub const prepend_custom = prepend_custom.constructor
 
@@ -595,12 +581,6 @@ pub const replace_multiple_spaces_by_one = replace_multiple_spaces_by_one.constr
 
 pub const replace_with_arbitrary = replace_with_arbitrary.constructor
 
-pub const set_handle_value = set_handle_value.constructor
-
-pub const set_handle_value__outside = set_handle_value__outside.constructor
-
-pub const set_handle_value_if_has_ancestor_else = set_handle_value_if_has_ancestor_else.constructor
-
 pub const source_provenance_append_img_spans = source_provenance_append_img_spans.constructor
 
 pub const source_provenance_append_span = source_provenance_append_span.constructor
@@ -618,8 +598,6 @@ pub const strip_delimiters_inside = strip_delimiters_inside.constructor
 pub const strip_delimiters_inside_if = strip_delimiters_inside_if.constructor
 
 pub const substitute_class = substitute_class.constructor
-
-pub const substitute_counters = substitute_counters.constructor
 
 pub const supplement_class = supplement_class.constructor
 
@@ -713,6 +691,28 @@ pub const wrap_with_custom_if_child_of = wrap_with_custom_if_child_of.constructo
 
 pub const wrap_with_custom_if_not_child_of = wrap_with_custom_if_not_child_of.constructor
 
+pub const writerly_format_commented_attributes = writerly_format_commented_attributes.constructor
+
+pub const writerly_handles_add_ids = writerly_handles_add_ids.constructor
+
+pub const writerly_handles_generate_v_definitions_from_t_definitions = writerly_handles_generate_v_definitions_from_t_definitions.constructor
+
+pub const writerly_handles_grand_wrapper_generate_dictionary = writerly_handles_grand_wrapper_generate_dictionary.constructor
+
+pub const writerly_handles_grand_wrapper_substitute = writerly_handles_grand_wrapper_substitute.constructor
+
+pub const writerly_handles_grand_wrapper_unwrap = writerly_handles_grand_wrapper_unwrap.constructor
+
+pub const writerly_handles_grand_wrapper_warn_unused = writerly_handles_grand_wrapper_warn_unused.constructor
+
+pub const writerly_handles_materialize_mathjax_tags = writerly_handles_materialize_mathjax_tags.constructor
+
+pub const writerly_handles_set_value = writerly_handles_set_value.constructor
+
+pub const writerly_handles_set_value__outside = writerly_handles_set_value__outside.constructor
+
+pub const writerly_handles_set_value_if_has_ancestor_else = writerly_handles_set_value_if_has_ancestor_else.constructor
+
 pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   absorb_backward_one.assertive_tests,
   absorb_forward_one.assertive_tests,
@@ -764,7 +764,10 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   concatenate_consecutive_lines_if.assertive_tests,
   concatenate_text_nodes.assertive_tests,
   convert_int_attributes_to_float.assertive_tests,
-  counters_substitute_and_assign_handles.assertive_tests,
+  counters_prepend_incrementing_attribute.assertive_tests,
+  counters_prepend_incrementing_attribute__outside.assertive_tests,
+  counters_prepend_incrementing_attribute_if_fancy.assertive_tests,
+  counters_substitute.assertive_tests,
   cut_paste_attribute_from_first_child_to_self.assertive_tests,
   cut_paste_attribute_from_self_to_child.assertive_tests,
   cut_paste_attribute_from_self_to_child__outside.assertive_tests,
@@ -788,7 +791,7 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   echo_v_if_see_text.assertive_tests,
   ensure_attribute_value_starts_with.assertive_tests,
   ensure_attribute_value_starts_with_prefix.assertive_tests,
-  expand_info_attribute.assertive_tests,
+  expand_emmet_like_attribute.assertive_tests,
   expel_initial_last_backward_forward.assertive_tests,
   extract_starting_and_ending_spaces.assertive_tests,
   filter_nodes_by_key_values.assertive_tests,
@@ -808,15 +811,9 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   fold_custom_into_text.assertive_tests,
   fold_into_text.assertive_tests,
   fold_into_text__batch.assertive_tests,
-  format_writerly_commented_attributes.assertive_tests,
   free_children.assertive_tests,
   free_children__batch.assertive_tests,
   group_consecutive_children__outside.assertive_tests,
-  handles_add_ids.assertive_tests,
-  handles_generate_v_definitions_from_t_definitions.assertive_tests,
-  handles_grand_wrapper_generate_dictionary.assertive_tests,
-  handles_grand_wrapper_substitute.assertive_tests,
-  handles_grand_wrapper_warn_unused.assertive_tests,
   identity.assertive_tests,
   insert_attribute_as_text.assertive_tests,
   insert_attribute_value_at_first_child_start.assertive_tests,
@@ -834,7 +831,6 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   line_rewrap_no1__outside.assertive_tests,
   line_rewrap_no2__outside.assertive_tests,
   markdown_link_closing_handrolled_splitter__outside.assertive_tests,
-  math_label_with_handle_to_mathjax_tag.assertive_tests,
   merge_parent_attributes_into_child.assertive_tests,
   naive_unescaped_split_and_replace__outside.assertive_tests,
   normalize_br_in_pre.assertive_tests,
@@ -853,9 +849,6 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   prepend_attribute_as_wrapped_text.assertive_tests,
   prepend_attribute_as_wrapped_text_else_custom.assertive_tests,
   prepend_attribute_if.assertive_tests,
-  prepend_counter_incrementing_attribute.assertive_tests,
-  prepend_counter_incrementing_attribute__outside.assertive_tests,
-  prepend_counter_incrementing_attribute_if_fancy.assertive_tests,
   prepend_custom.assertive_tests,
   prepend_text_node.assertive_tests,
   prepend_text_node__batch.assertive_tests,
@@ -892,9 +885,6 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   replace_in_attribute_values.assertive_tests,
   replace_multiple_spaces_by_one.assertive_tests,
   replace_with_arbitrary.assertive_tests,
-  set_handle_value.assertive_tests,
-  set_handle_value__outside.assertive_tests,
-  set_handle_value_if_has_ancestor_else.assertive_tests,
   source_provenance_append_img_spans.assertive_tests,
   source_provenance_append_span.assertive_tests,
   source_provenance_wrap.assertive_tests,
@@ -904,7 +894,6 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   strip_delimiters_inside.assertive_tests,
   strip_delimiters_inside_if.assertive_tests,
   substitute_class.assertive_tests,
-  substitute_counters.assertive_tests,
   supplement_class.assertive_tests,
   surround_elements_by.assertive_tests,
   table_marker.assertive_tests,
@@ -951,4 +940,15 @@ pub const assertive_tests: List(fn() -> testing.AssertiveTestCollection) = [
   wrap_if_text_contains.assertive_tests,
   wrap_with_custom_if_child_of.assertive_tests,
   wrap_with_custom_if_not_child_of.assertive_tests,
+  writerly_format_commented_attributes.assertive_tests,
+  writerly_handles_add_ids.assertive_tests,
+  writerly_handles_generate_v_definitions_from_t_definitions.assertive_tests,
+  writerly_handles_grand_wrapper_generate_dictionary.assertive_tests,
+  writerly_handles_grand_wrapper_substitute.assertive_tests,
+  writerly_handles_grand_wrapper_unwrap.assertive_tests,
+  writerly_handles_grand_wrapper_warn_unused.assertive_tests,
+  writerly_handles_materialize_mathjax_tags.assertive_tests,
+  writerly_handles_set_value.assertive_tests,
+  writerly_handles_set_value__outside.assertive_tests,
+  writerly_handles_set_value_if_has_ancestor_else.assertive_tests,
 ]

@@ -1,5 +1,5 @@
 name = "vxml_pipeline"
-version = "0.1.1"
+version = "0.2.0"
 description = "Run and debug VXML transformation pipelines."
 licences = ["MIT"]
 repository = { type = "github", user = "vistuleB", repo = "vxml_pipeline" }
