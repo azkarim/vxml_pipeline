@@ -1,9 +1,8 @@
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, Some}
-import gleam/string
 import on
-import vxml.{type Attr, type VXML, V}
+import vxml.{type VXML, V}
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
@@ -39,14 +38,16 @@ fn v_before(
   #(VXML, State, List(DesugaringWarning), core.TrafficLight),
   DesugaringError,
 ) {
-  let assert V(_, tag, attrs, _) = vxml
+  let assert V(_, tag, _, children) = vxml
 
   case tag {
     "GrandWrapper" -> {
-      use remaining <- on.ok(collect_unused_ids(attrs))
+      use remaining <- on.ok(collect_unused_ids(children))
       let state = State(..state, remaining: remaining)
       Ok(#(vxml, state, [], traffic_light(remaining)))
     }
+
+    "Handle" -> Ok(#(vxml, state, [], core.GoBack))
 
     _ -> {
       let state = case our_id(vxml) {
@@ -70,29 +71,31 @@ fn v_before(
 }
 
 fn collect_unused_ids(
-  attrs: List(Attr),
+  children: List(VXML),
 ) -> Result(Dict(String, List(String)), DesugaringError) {
-  list.try_fold(attrs, dict.new(), fn(acc, attr) {
-    case attr.key == "handle" {
-      False -> Ok(acc)
-      True ->
-        case attr.val |> string.split("|") {
-          [_, _, _, _, _, "used"] -> Ok(acc)
-          [name, _, _, id, _, ""] ->
+  list.try_fold(children, dict.new(), fn(acc, child) {
+    case child {
+      V(_, "Handle", _, _) -> {
+        let name = core.v_first_attr_with_key(child, "name")
+        let id = core.v_first_attr_with_key(child, "id")
+        let used = core.v_first_attr_with_key(child, "used")
+        case name, id, used {
+          Some(_), Some(_), Some(used) if used.val == "true" -> Ok(acc)
+          Some(name), Some(id), Some(used) if used.val == "false" ->
             Ok(
-              dict.upsert(acc, id, fn(existing) {
-                [name, ..option.unwrap(existing, [])]
+              dict.upsert(acc, id.val, fn(existing) {
+                [name.val, ..option.unwrap(existing, [])]
               }),
             )
-          _ ->
+          _, _, _ ->
             Error(DesugaringError(
-              attr.blame,
-              "GrandWrapper handle entry has no 'used' column (run "
-                <> "handles_grand_wrapper_substitute first); found: “"
-                <> attr.val
-                <> "”",
+              child.blame,
+              "Handle element is malformed or has no valid 'used' attribute "
+                <> "(run handles_grand_wrapper_substitute first)",
             ))
         }
+      }
+      _ -> Ok(acc)
     }
   })
 }
@@ -174,14 +177,11 @@ pub const name = "handles_grand_wrapper_warn_unused"
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 
 /// Expects a document whose root is a 'GrandWrapper'
-/// carrying a handle dictionary in the 6-column form
-/// left behind by `handles_grand_wrapper_substitute`:
-///
-/// handle=<name>|<page>|<value>|<id>|<path>|used
-/// handle=<name>|<page>|<value>|<id>|<path>|
+/// carrying structured `Handle` children whose boolean
+/// `used` attrs were added by `handles_grand_wrapper_substitute`.
 ///
 /// Emits one DesugaringWarning per handle whose
-/// 'used' column is empty and whose id points to a
+/// `used` attr is `false` and whose id points to a
 /// node whose tag is listed in the param, blamed on
 /// that node. (Passing ["MathBlock"] therefore
 /// reports unused equation handles.)
@@ -212,7 +212,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: ["MathBlock"],
       source: "
         <> GrandWrapper
-          handle=eq:unused||(1.1)|_1_h.a.i_|./ch1.html|
+          <> Handle
+            name=eq:unused
+            page=false
+            value=<<(1.1)>>
+            id=_1_h.a.i_
+            path=./ch1.html
+            used=false
           <> root
             <> Chapter
               path=./ch1.html
@@ -223,7 +229,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=eq:unused||(1.1)|_1_h.a.i_|./ch1.html|
+          <> Handle
+            name=eq:unused
+            page=false
+            value=<<(1.1)>>
+            id=_1_h.a.i_
+            path=./ch1.html
+            used=false
           <> root
             <> Chapter
               path=./ch1.html
@@ -239,7 +251,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: ["MathBlock"],
       source: "
         <> GrandWrapper
-          handle=eq:used||(1.1)|_1_h.a.i_|./ch1.html|used
+          <> Handle
+            name=eq:used
+            page=false
+            value=<<(1.1)>>
+            id=_1_h.a.i_
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch1.html
@@ -250,7 +268,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=eq:used||(1.1)|_1_h.a.i_|./ch1.html|used
+          <> Handle
+            name=eq:used
+            page=false
+            value=<<(1.1)>>
+            id=_1_h.a.i_
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch1.html
@@ -266,7 +290,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: ["MathBlock"],
       source: "
         <> GrandWrapper
-          handle=sec:intro||1.1|_1_h.a.i_|./ch1.html|
+          <> Handle
+            name=sec:intro
+            page=false
+            value=<<1.1>>
+            id=_1_h.a.i_
+            path=./ch1.html
+            used=false
           <> root
             <> Chapter
               path=./ch1.html
@@ -277,7 +307,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=sec:intro||1.1|_1_h.a.i_|./ch1.html|
+          <> Handle
+            name=sec:intro
+            page=false
+            value=<<1.1>>
+            id=_1_h.a.i_
+            path=./ch1.html
+            used=false
           <> root
             <> Chapter
               path=./ch1.html

@@ -15,6 +15,7 @@ pub fn main() {
   markdown_link_pipeline_test()
   inline_math_splitting_test()
   asymmetric_inline_math_splitting_test()
+  asymmetric_inline_math_with_escaped_dollar_test()
   display_math_splitting_test()
   asymmetric_display_math_splitting_test()
   symmetric_delimiter_splitting_test()
@@ -111,7 +112,33 @@ fn asymmetric_inline_math_splitting_test() {
     [],
     [
       T(_, [Line(_, "before ")]),
-      V(_, "Math", [], [T(_, [Line(_, "$\\(x\\)$")])]),
+      V(_, "Math", [], [T(_, [Line(_, "$x$")])]),
+      T(_, [Line(_, " after")]),
+    ],
+  ) = output
+}
+
+fn asymmetric_inline_math_with_escaped_dollar_test() {
+  let input =
+    V(blame.no_blame, "root", [], [
+      T(blame.no_blame, [Line(blame.no_blame, "before \\(\\$500\\) after")]),
+    ])
+  let pipeline =
+    delimited_syntax.create_math_elements(
+      [BackslashParenthesis],
+      SingleDollar,
+      BackslashParenthesis,
+      [],
+    )
+  let assert Ok(#(output, _, _)) =
+    ds.run_pipeline(input, pipeline, [], pipeline_ux_options())
+  let assert V(
+    _,
+    "root",
+    [],
+    [
+      T(_, [Line(_, "before ")]),
+      V(_, "Math", [], [T(_, [Line(_, "\\(\\$500\\)")])]),
       T(_, [Line(_, " after")]),
     ],
   ) = output

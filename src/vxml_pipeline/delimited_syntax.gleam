@@ -219,8 +219,6 @@ fn create_math_or_mathblock_elements(
     InlineMath -> #("Math", core.latex_inline_delimiters())
   }
 
-  let strip_existing = [dl.strip_delimiters_inside(#(tag, delimiters))]
-
   let create_tags =
     parsed
     |> list.map(
@@ -231,6 +229,12 @@ fn create_math_or_mathblock_elements(
       ]),
     )
     |> list.flatten
+
+  // Strip after parsing so this applies both to Math/MathBlock nodes already
+  // present in the input and to nodes created from delimiters just above.
+  // Environment delimiters are intentionally absent from `delimiters` and
+  // therefore remain available to MathJax inside the produced display pair.
+  let strip_delimiters = [dl.strip_delimiters_inside(#(tag, delimiters))]
 
   let reinsert = case kind {
     DisplayMath -> [
@@ -249,8 +253,8 @@ fn create_math_or_mathblock_elements(
   }
 
   [
-    strip_existing,
     create_tags,
+    strip_delimiters,
     reinsert,
   ]
   |> list.flatten

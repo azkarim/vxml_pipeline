@@ -1,30 +1,39 @@
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/regexp.{type Regexp, Match}
 import gleam/string
 import on
-import splitter as sp
 import vxml.{type Attr, type VXML, Attr, V}
 import vxml/blame.{type Blame} as bl
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError, DesugaringError,
 }
+import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-fn grand_wrapper_attrs(state: State) -> List(Attr) {
+fn handle_elements(state: State) -> List(VXML) {
   state.handles
   |> dict.map_values(fn(key, value) {
-    let #(page, value, id, path, _) = value
+    let #(decorators, page, value, id, path, _) = value
     let page = case page {
-      True -> "#page"
-      False -> ""
+      True -> "true"
+      False -> "false"
     }
-    Attr(
+    V(
       desugarer_blame(24),
-      "handle",
-      key <> "|" <> page <> "|" <> value <> "|" <> id <> "|" <> path,
+      "Handle",
+      [
+        Attr(desugarer_blame(27), "name", key),
+        Attr(desugarer_blame(28), "decorators", decorators),
+        Attr(desugarer_blame(29), "page", page),
+        Attr(desugarer_blame(30), "value", handle_syntax.encode_value(value)),
+        Attr(desugarer_blame(32), "id", id),
+        Attr(desugarer_blame(33), "path", path),
+      ],
+      [],
     )
   })
   |> dict.values
@@ -32,21 +41,26 @@ fn grand_wrapper_attrs(state: State) -> List(Attr) {
 
 fn try_read_handle(
   attr: Attr,
-) -> Result(#(String, Bool, String, String), DesugaringError) {
+  inner: InnerParam,
+) -> Result(#(String, String, Bool, String), DesugaringError) {
   assert attr.key == "handle"
-  case string.split(attr.val, "|") {
-    [name, value, id] -> {
-      case name |> string.ends_with("#page") {
-        False -> Ok(#(name, False, value, id))
-        True -> Ok(#(name |> string.drop_end(5), True, value, id))
+  case regexp.scan(inner.handle_regexp, attr.val) {
+    [Match(_, [Some(name), value]), ..] -> {
+      let value = option.unwrap(value, "")
+      let #(name, decorators) = case string.split_once(name, "#") {
+        Ok(#(name, decorators)) -> #(name, "#" <> decorators)
+        Error(_) -> #(name, "")
       }
+      let page =
+        decorators
+        |> string.split("#")
+        |> list.contains("page")
+      Ok(#(name, decorators, page, value))
     }
     _ ->
       Error(DesugaringError(
         attr.blame,
-        "handle attr not in form <name>|<value>|<id>; found: “"
-          <> attr.val
-          <> "”",
+        "handle attr not in form <name> <<value>>; found: “" <> attr.val <> "”",
       ))
   }
 }
@@ -54,6 +68,7 @@ fn try_read_handle(
 fn try_insert_handle(
   handles: HandlesDict,
   name: String,
+  decorators: String,
   page: Bool,
   value: String,
   id: String,
@@ -67,10 +82,13 @@ fn try_insert_handle(
         "redefinition of '"
           <> name
           <> "' (previously defined at "
-          <> bl.blame_digest(entry.4)
+          <> bl.blame_digest(entry.5)
           <> ")",
       ))
-    Error(_) -> Ok(dict.insert(handles, name, #(page, value, id, path, blame)))
+    Error(_) ->
+      Ok(
+        dict.insert(handles, name, #(decorators, page, value, id, path, blame)),
+      )
   }
 }
 
@@ -79,6 +97,8 @@ fn attrs_fold(
   remaining: List(Attr),
   handles: HandlesDict,
   path: String,
+  id: String,
+  inner: InnerParam,
 ) -> Result(#(HandlesDict, List(Attr)), DesugaringError) {
   use first, rest <- on.empty_nonempty(remaining, fn() {
     Ok(#(handles, not_handles_acc |> list.reverse))
@@ -86,20 +106,24 @@ fn attrs_fold(
 
   case first.key {
     "handle" -> {
-      use #(name, page, value, id) <- on.ok(try_read_handle(first))
+      use #(name, decorators, page, value) <- on.ok(try_read_handle(
+        first,
+        inner,
+      ))
       use handles <- on.ok(try_insert_handle(
         handles,
         name,
+        decorators,
         page,
         value,
         id,
         path,
         first.blame,
       ))
-      attrs_fold(not_handles_acc, rest, handles, path)
+      attrs_fold(not_handles_acc, rest, handles, path, id, inner)
     }
 
-    _ -> attrs_fold([first, ..not_handles_acc], rest, handles, path)
+    _ -> attrs_fold([first, ..not_handles_acc], rest, handles, path, id, inner)
   }
 }
 
@@ -107,10 +131,9 @@ fn check_no_handles(attrs: List(Attr)) -> Result(List(Nil), DesugaringError) {
   list.try_map(attrs, fn(attr) {
     case attr.key {
       "handle" -> {
-        let #(name, _, _) = sp.split(sp.new(["|"]), attr.val)
         Error(DesugaringError(
           attr.blame,
-          "no page path at handle '" <> name <> "'",
+          "no page path at handle '" <> attr.val <> "'",
         ))
       }
       _ -> Ok(Nil)
@@ -120,7 +143,7 @@ fn check_no_handles(attrs: List(Attr)) -> Result(List(Nil), DesugaringError) {
 
 fn update_path(state: State, node: VXML, inner: InnerParam) -> State {
   let assert V(_, _, _, _) = node
-  case core.v_first_attr_with_key(node, inner) {
+  case core.v_first_attr_with_key(node, inner.path_key) {
     Some(Attr(_, _, value)) -> State(..state, path: Some(value))
     None -> state
   }
@@ -146,8 +169,26 @@ fn on_enter(
       Ok(#(vxml, state))
     }
     Some(path) -> {
-      use #(handles, attrs) <- on.ok(attrs_fold([], attrs, state.handles, path))
-      Ok(#(V(..vxml, attrs: attrs), State(..state, handles: handles)))
+      case list.any(attrs, fn(attr) { attr.key == "handle" }) {
+        False -> Ok(#(vxml, state))
+        True -> {
+          use id <- on.none_some(core.v_first_attr_with_key(vxml, "id"), fn() {
+            Error(DesugaringError(
+              vxml.blame,
+              "element with a handle attr has no id attr; run handles_add_ids first",
+            ))
+          })
+          use #(handles, attrs) <- on.ok(attrs_fold(
+            [],
+            attrs,
+            state.handles,
+            path,
+            id.val,
+            inner,
+          ))
+          Ok(#(V(..vxml, attrs: attrs), State(..state, handles: handles)))
+        }
+      }
     }
   }
 }
@@ -162,9 +203,12 @@ fn on_exit(
   case ancestors {
     [] -> {
       let grand_wrapper =
-        V(desugarer_blame(164), "GrandWrapper", grand_wrapper_attrs(state), [
-          vxml,
-        ])
+        V(
+          desugarer_blame(164),
+          "GrandWrapper",
+          [],
+          list.append(handle_elements(state), [vxml]),
+        )
       Ok(#(grand_wrapper, state))
     }
     _ -> Ok(#(vxml, state))
@@ -187,13 +231,19 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
 }
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  Ok(param)
+  let assert Ok(handle_regexp) =
+    regexp.from_string(
+      "^(" <> handle_syntax.decorated_name_pattern <> ") <<(.*)>>$",
+    )
+  Ok(InnerParam(path_key: param, handle_regexp: handle_regexp))
 }
 
 type HandlesDict =
   Dict(
     String,
     #(
+      // Decorators copied from the definition token.
+      String,
       // Whether the handle links to `#page` by default.
       Bool,
       // String value of the handle.
@@ -215,8 +265,9 @@ type State {
 type Param =
   String
 
-type InnerParam =
-  Param
+type InnerParam {
+  InnerParam(path_key: String, handle_regexp: Regexp)
+}
 
 pub const name = "handles_grand_wrapper_generate_dictionary"
 
@@ -230,11 +281,12 @@ fn desugarer_blame(line_no: Int) {
 
 /// Traverses the tree. Expects `handle` attrs to be in the form:
 ///
-/// `handle=<name>|<value>|<id>`
+/// `handle=<name> <<value>>`
 ///
-/// Wraps the root in `GrandWrapper` and moves handle definitions there as:
-///
-/// `handle=<name>|<#page>|<value>|<id>|<path>`
+/// Wraps the root in `GrandWrapper` and moves handle definitions
+/// into structured `Handle` children carrying `name`, `decorators`,
+/// `page`, `value`, `id`, and `path` attributes. Decorators are
+/// preserved without interpretation except for deriving `page`.
 ///
 /// Leaves `id` attrs in place and does not add `id` attrs to `GrandWrapper`.
 pub fn constructor(param: Param) -> Desugarer {
@@ -261,14 +313,20 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
             <>
               'some text'
             <> Math
-              handle=super-name|AA|_23-super-id
+              handle=super-name <<AA| with spaces  >>
               id=_23-super-id
               <>
                 '$x^2 + b^2$'
       ",
       expected: "
         <> GrandWrapper
-          handle=super-name||AA|_23-super-id|./ch1.html
+          <> Handle
+            name=super-name
+            decorators=
+            page=false
+            value=<<AA| with spaces  >>
+            id=_23-super-id
+            path=./ch1.html
           <> root
             <> ChapterChapter
               local_path=./ch1.html
@@ -289,19 +347,27 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
             <>
               'some text'
             <> Math
-              handle=other-name#page|BB|_24-other-id
+              handle=other-name#page <<BB>>
+              id=_24-other-id
               <>
                 '$y^2$'
       ",
       expected: "
         <> GrandWrapper
-          handle=other-name|#page|BB|_24-other-id|./ch2.html
+          <> Handle
+            name=other-name
+            decorators=#page
+            page=true
+            value=<<BB>>
+            id=_24-other-id
+            path=./ch2.html
           <> root
             <> ChapterChapter
               local_path=./ch2.html
               <>
                 'some text'
               <> Math
+                id=_24-other-id
                 <>
                   '$y^2$'
       ",

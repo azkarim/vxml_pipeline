@@ -4,7 +4,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/regexp.{type Match, type Regexp, Match}
 import gleam/result
 import gleam/set.{type Set}
-import gleam/string.{inspect as ins}
+import gleam/string
 import on
 import vxml.{type Attr, type Line, type VXML, Attr, Line, T, V}
 import vxml/blame.{type Blame} as bl
@@ -13,6 +13,8 @@ import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
   type DesugaringWarning, DesugaringError, DesugaringWarning,
 }
+import vxml_pipeline/handle_escaping
+import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
@@ -30,6 +32,51 @@ fn extract_handle_and_page_and_decoy(
     _ -> #(handle_name, None)
   }
   #(handle_name, page, decoy)
+}
+
+type HandleTextPart {
+  PlainText(String)
+  ActiveHandle(Match)
+}
+
+fn handle_text_parts(
+  remaining: String,
+  done: String,
+  candidate_regexp: Regexp,
+) -> List(HandleTextPart) {
+  case regexp.scan(candidate_regexp, remaining) {
+    [] -> [PlainText(done <> remaining)]
+    [candidate, ..] -> {
+      let backslashes = case candidate.submatches {
+        [Some(backslashes), ..] -> backslashes
+        _ -> ""
+      }
+      let handle_name = case candidate.submatches {
+        [_, _, Some(handle_name)] -> handle_name
+        _ -> ""
+      }
+      let assert Ok(#(before, after)) =
+        string.split_once(remaining, candidate.content)
+      let decoded_backslashes = handle_escaping.decode_backslashes(backslashes)
+      case handle_escaping.is_escaped(backslashes) {
+        True ->
+          handle_text_parts(
+            after,
+            done <> before <> decoded_backslashes <> ">>" <> handle_name,
+            candidate_regexp,
+          )
+        False -> {
+          let handle_match =
+            Match(">>" <> handle_name, [Some(">>"), Some(handle_name)])
+          [
+            PlainText(done <> before <> decoded_backslashes),
+            ActiveHandle(handle_match),
+            ..handle_text_parts(after, "", candidate_regexp)
+          ]
+        }
+      }
+    }
+  }
 }
 
 fn hyperlink_constructor(
@@ -102,60 +149,6 @@ fn hyperlink_maybe(
   Ok(#(warning_span_or_decoy_link, [actual_warning], []))
 }
 
-fn matches_2_hyperlinks(
-  matches: List(Match),
-  blame: Blame,
-  state: State,
-  inner: InnerParam,
-) -> Result(
-  #(List(VXML), List(DesugaringWarning), List(String)),
-  DesugaringError,
-) {
-  let handles_and_pages_and_decoys =
-    matches |> list.map(extract_handle_and_page_and_decoy)
-  use #(vxmls, warnings, used) <- on.ok(
-    list.try_fold(
-      handles_and_pages_and_decoys,
-      #([], [], []),
-      fn(acc, handle_and_page_and_decoy) {
-        use #(vxml, warnings, used) <- on.ok(hyperlink_maybe(
-          handle_and_page_and_decoy,
-          blame,
-          state,
-          inner,
-        ))
-        Ok(#(
-          [vxml, ..acc.0],
-          core.pour(warnings, acc.1),
-          core.pour(used, acc.2),
-        ))
-      },
-    ),
-  )
-  Ok(#(vxmls |> list.reverse, warnings |> list.reverse, used))
-}
-
-fn augment_to_1_mod_3(splits: List(String)) -> List(String) {
-  case list.length(splits) % 3 != 1 {
-    True -> {
-      let assert True = list.is_empty(splits) as { ins(splits) }
-      [""]
-    }
-    False -> splits
-  }
-}
-
-fn retain_0_mod_3(splits: List(String)) -> List(String) {
-  splits
-  |> list.index_fold(from: [], with: fn(acc, split, index) {
-    case index % 3 == 0 {
-      True -> [split, ..acc]
-      False -> acc
-    }
-  })
-  |> list.reverse
-}
-
 // ***********************************************************
 // math mode: substitution as flat LaTeX text, not as V-nodes
 // ***********************************************************
@@ -208,52 +201,48 @@ fn substitution_text(
 /// surrounding characters are '(' and ')' with no whitespace absorbs
 /// both parens into the \href value, so the whole "(2.5)" is clickable
 /// rather than just the number.
-fn rebuild(
-  splits: List(String),
-  matches: List(Match),
+fn render_math_parts(
+  parts: List(HandleTextPart),
   blame: Blame,
   state: State,
 ) -> #(String, List(DesugaringWarning), List(String)) {
-  case splits, matches {
-    [last], [] -> #(last, [], [])
-    [before, next, ..rest_splits], [m, ..rest_matches] -> {
+  case parts {
+    [PlainText(text)] -> #(text, [], [])
+    [PlainText(before), ActiveHandle(handle), PlainText(next), ..rest] -> {
       let fold = string.ends_with(before, "(") && string.starts_with(next, ")")
       let #(before, next) = case fold {
         True -> #(string.drop_end(before, 1), string.drop_start(next, 1))
         False -> #(before, next)
       }
-      let #(sub_text, warnings, used) =
+      let #(substitution, warnings, used) =
         substitution_text(
-          extract_handle_and_page_and_decoy(m),
+          extract_handle_and_page_and_decoy(handle),
           blame,
           fold,
           state,
         )
       let #(rest_text, rest_warnings, rest_used) =
-        rebuild([next, ..rest_splits], rest_matches, blame, state)
+        render_math_parts([PlainText(next), ..rest], blame, state)
       #(
-        before <> sub_text <> rest_text,
+        before <> substitution <> rest_text,
         core.pour(warnings, rest_warnings),
         core.pour(used, rest_used),
       )
     }
-    _, _ ->
-      panic as "splits/matches length mismatch in handles_grand_wrapper_substitute"
+    _ -> panic as "malformed handle-text parts"
   }
 }
 
 fn process_line_inside_math(
   line: Line,
-  matches: List(Match),
   state: State,
   inner: InnerParam,
 ) -> #(Line, List(DesugaringWarning), List(String)) {
   let Line(blame, content) = line
-  let splits =
-    regexp.split(inner.handles_regexp, content)
-    |> augment_to_1_mod_3
-    |> retain_0_mod_3
-  let #(new_content, warnings, used) = rebuild(splits, matches, blame, state)
+  let #(new_content, warnings, used) =
+    content
+    |> handle_text_parts("", inner.handle_candidates_regexp)
+    |> render_math_parts(blame, state)
   #(Line(blame, new_content), warnings, used)
 }
 
@@ -264,28 +253,12 @@ fn process_lines_inside_math(
 ) -> #(List(Line), List(DesugaringWarning), List(String)) {
   let triples =
     lines
-    |> list.map(fn(line) {
-      case regexp.scan(inner.handles_regexp, line.content) {
-        [] -> #(line, [], [])
-        matches -> process_line_inside_math(line, matches, state, inner)
-      }
-    })
+    |> list.map(process_line_inside_math(_, state, inner))
   #(
     triples |> list.map(fn(triple) { triple.0 }),
     triples |> list.map(fn(triple) { triple.1 }) |> list.flatten,
     triples |> list.map(fn(triple) { triple.2 }) |> list.flatten,
   )
-}
-
-fn split_2_t(split: String, blame: Blame) -> VXML {
-  T(blame, [Line(blame, split)])
-}
-
-fn splits_2_ts(splits: List(String), blame: Blame) -> List(VXML) {
-  splits
-  |> augment_to_1_mod_3
-  |> retain_0_mod_3
-  |> list.map(split_2_t(_, blame))
 }
 
 fn process_line(
@@ -297,23 +270,31 @@ fn process_line(
   DesugaringError,
 ) {
   let Line(blame, content) = line
-  case regexp.scan(inner.handles_regexp, content) {
-    [_, ..] as matches -> {
-      let splits = regexp.split(inner.handles_regexp, content)
-      use #(hyperlinks, warnings, used) <- on.ok(matches_2_hyperlinks(
-        matches,
-        blame,
-        state,
-        inner,
-      ))
-      let text_nodes = splits_2_ts(splits, blame)
-      let vxmls =
-        list.interleave([text_nodes, hyperlinks])
-        |> core.last_to_first_concatenation
-      Ok(#(vxmls, warnings, used))
-    }
-    [] -> Ok(#([T(line.blame, [line])], [], []))
-  }
+  use #(vxmls, warnings, used) <- on.ok(
+    content
+    |> handle_text_parts("", inner.handle_candidates_regexp)
+    |> list.try_fold(#([], [], []), fn(acc, part) {
+      case part {
+        PlainText("") -> Ok(acc)
+        PlainText(text) ->
+          Ok(#([T(blame, [Line(blame, text)]), ..acc.0], acc.1, acc.2))
+        ActiveHandle(handle) -> {
+          use #(hyperlink, warnings, used) <- on.ok(hyperlink_maybe(
+            extract_handle_and_page_and_decoy(handle),
+            blame,
+            state,
+            inner,
+          ))
+          Ok(#(
+            [hyperlink, ..acc.0],
+            core.pour(warnings, acc.1),
+            core.pour(used, acc.2),
+          ))
+        }
+      }
+    }),
+  )
+  Ok(#(list.reverse(vxmls), list.reverse(warnings), used))
 }
 
 fn process_lines(
@@ -349,19 +330,26 @@ fn process_lines(
   Ok(#(vxmls, warnings, used))
 }
 
-fn grand_wrapper_load(state: State, attrs: List(Attr)) -> State {
-  let #(handles, _) = core.attrs_extract_key_occurrences(attrs, "handle")
-
+fn grand_wrapper_load(state: State, children: List(VXML)) -> State {
   let handles =
-    list.fold(handles, dict.new(), fn(acc, attr) {
-      let assert [handle_name, page, value, id, path] =
-        attr.val |> string.split("|")
-      let page = case page {
-        "#page" -> True
-        "" -> False
-        _ -> panic as "malformed GrandWrapper dictionary"
+    list.fold(children, dict.new(), fn(acc, child) {
+      case child {
+        V(_, "Handle", _, _) -> {
+          let assert Some(name) = core.v_first_attr_with_key(child, "name")
+          let assert Some(page) = core.v_first_attr_with_key(child, "page")
+          let assert Some(value) = core.v_first_attr_with_key(child, "value")
+          let assert Some(id) = core.v_first_attr_with_key(child, "id")
+          let assert Some(path) = core.v_first_attr_with_key(child, "path")
+          let assert Ok(value) = handle_syntax.decode_value(value.val)
+          let page = case page.val {
+            "true" -> True
+            "false" -> False
+            _ -> panic as "malformed Handle page value"
+          }
+          dict.insert(acc, name.val, #(page, value, id.val, path.val))
+        }
+        _ -> acc
       }
-      dict.insert(acc, handle_name, #(page, value, id, path))
     })
 
   State(..state, handles: handles)
@@ -371,31 +359,26 @@ fn mark_used(used: Set(String), names: List(String)) -> Set(String) {
   list.fold(names, used, fn(acc, name) { set.insert(acc, name) })
 }
 
-/// Appends a 6th 'used' column to each handle dictionary entry of the
-/// GrandWrapper, turning
-///
-/// handle=<name>|<page>|<value>|<id>|<path>
-///
-/// into
-///
-/// handle=<name>|<page>|<value>|<id>|<path>|used     (handle was referenced)
-/// handle=<name>|<page>|<value>|<id>|<path>|         (handle was never referenced)
 fn grand_wrapper_record_usage(
-  attrs: List(Attr),
+  children: List(VXML),
   used: Set(String),
-) -> List(Attr) {
-  attrs
-  |> list.map(fn(attr) {
-    case attr.key == "handle" {
-      False -> attr
-      True -> {
-        let assert [handle_name, _, _, _, _] = attr.val |> string.split("|")
-        let suffix = case set.contains(used, handle_name) {
-          True -> "|used"
-          False -> "|"
+) -> List(VXML) {
+  children
+  |> list.map(fn(child) {
+    case child {
+      V(_, "Handle", attrs, _) -> {
+        let assert Some(name) = core.v_first_attr_with_key(child, "name")
+        let used_value = case set.contains(used, name.val) {
+          True -> "true"
+          False -> "false"
         }
-        Attr(..attr, val: attr.val <> suffix)
+        let attrs =
+          attrs
+          |> list.filter(fn(attr) { attr.key != "used" })
+          |> list.append([Attr(child.blame, "used", used_value)])
+        V(..child, attrs: attrs)
       }
+      _ -> child
     }
   })
 }
@@ -445,10 +428,25 @@ fn substitute_handle_in_href(
 fn substitute_in_href(
   attr: Attr,
   state: State,
+  inner: InnerParam,
 ) -> #(Attr, HrefType, List(DesugaringWarning), List(String)) {
-  case attr.key == "href", attr.val {
-    True, ">>" <> _ -> substitute_handle_in_href(attr, state)
-    _, _ -> #(attr, NotAHandleHref, [], [])
+  case attr.key {
+    "href" ->
+      case handle_text_parts(attr.val, "", inner.handle_candidates_regexp) {
+        [PlainText(prefix), ActiveHandle(handle), PlainText("")] -> {
+          let #(attr, href_type, warnings, used) =
+            substitute_handle_in_href(Attr(..attr, val: handle.content), state)
+          #(Attr(..attr, val: prefix <> attr.val), href_type, warnings, used)
+        }
+        [PlainText(literal)] -> #(
+          Attr(..attr, val: literal),
+          NotAHandleHref,
+          [],
+          [],
+        )
+        _ -> #(attr, NotAHandleHref, [], [])
+      }
+    _ -> #(attr, NotAHandleHref, [], [])
   }
 }
 
@@ -460,7 +458,8 @@ fn substitute_hrefs_in_a(
   let assert V(_, "a", attrs, _) = vxml
   use #(attrs, acc) <- on.ok(
     core.try_map_fold(attrs, #(None, [], []), fn(acc, attr) {
-      let #(attr, href_type, warnings, used) = substitute_in_href(attr, state)
+      let #(attr, href_type, warnings, used) =
+        substitute_in_href(attr, state, inner)
       use acc0 <- on.ok(case acc.0, href_type {
         _, NotAHandleHref -> Ok(acc.0)
         None, _ -> Ok(Some(href_type))
@@ -501,9 +500,10 @@ fn v_before_transform(
   state: State,
   inner: InnerParam,
 ) -> Result(#(VXML, State, List(DesugaringWarning)), DesugaringError) {
-  let assert V(_, tag, attrs, _) = vxml
+  let assert V(_, tag, _, children) = vxml
   let state = case tag {
-    "GrandWrapper" -> grand_wrapper_load(state, attrs)
+    "GrandWrapper" -> grand_wrapper_load(state, children)
+    "Handle" -> state
     _ -> update_state_path(state, vxml, inner)
   }
   let state = case
@@ -516,6 +516,10 @@ fn v_before_transform(
     True -> state
     False -> State(..state, inside_math: True)
   }
+  let state = case state.inside_code_block || tag != "WriterlyCodeBlock" {
+    True -> state
+    False -> State(..state, inside_code_block: True)
+  }
   case tag {
     "a" -> substitute_hrefs_in_a(vxml, state, inner)
     _ -> Ok(#(vxml, state, []))
@@ -527,16 +531,20 @@ fn v_after_transform(
   original_state: State,
   latest_state: State,
 ) -> Result(#(List(VXML), State, List(DesugaringWarning)), DesugaringError) {
-  let assert V(_, tag, attrs, _) = vxml
+  let assert V(_, tag, _, children) = vxml
   let exit_state =
     State(
       ..latest_state,
       inside_a_link_tag: original_state.inside_a_link_tag,
       inside_math: original_state.inside_math,
+      inside_code_block: original_state.inside_code_block,
     )
   let vxml = case tag {
     "GrandWrapper" ->
-      V(..vxml, attrs: grand_wrapper_record_usage(attrs, latest_state.used))
+      V(
+        ..vxml,
+        children: grand_wrapper_record_usage(children, latest_state.used),
+      )
     _ -> vxml
   }
   Ok(#([vxml], exit_state, []))
@@ -548,6 +556,10 @@ fn t_transform(
   inner: InnerParam,
 ) -> Result(#(List(VXML), State, List(DesugaringWarning)), DesugaringError) {
   let assert T(blame, lines) = vxml
+
+  use <- on.true_false(state.inside_code_block, fn() {
+    Ok(#([vxml], state, []))
+  })
 
   // inside math the substitution stays flat text, so the T node survives
   // as a single T node instead of being split into text/link siblings
@@ -584,14 +596,15 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
     )
   nodemap
   |> n2t.one_to_many_enter_exit_stateful_with_warnings_nodemap_2_desugarer_transform(
-    State(dict.new(), None, False, False, set.new()),
+    State(dict.new(), None, False, False, False, set.new()),
   )
 }
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  let assert Ok(handles_regexp) =
+  let handle_name = "[\\p{L}\\p{N}\\p{M}_.:'\\-\\^]*[\\p{L}\\p{N}\\p{M}_'\\^]"
+  let assert Ok(handle_candidates_regexp) =
     regexp.from_string(
-      "(>>)([\\w^.:'-]+[\\w'](?:#page)?(?:#decoy:[0-9]+)?(?:##)?)",
+      "(\\\\*)(>>)(" <> handle_name <> "(?:#page)?(?:#decoy:[0-9]+)?(?:##)?)",
     )
 
   Ok(InnerParam(
@@ -602,7 +615,7 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
     out_page_attrs: param.4 |> core.string_pairs_to_attrs(desugarer_blame(595)),
     link_tags: param.5,
     math_tags: param.6,
-    handles_regexp: handles_regexp,
+    handle_candidates_regexp: handle_candidates_regexp,
   ))
 }
 
@@ -621,9 +634,10 @@ type State {
     // inside one of the param-listed math tags, where a substitution has
     // to be flat LaTeX text rather than an 'a' V-node
     inside_math: Bool,
+    // Writerly recognizes definitions but not usages in fenced code content.
+    inside_code_block: Bool,
     // names of handles that were actually referenced somewhere in the
-    // document; written back to the GrandWrapper dictionary as a 6th
-    // 'used' column, for downstream unused-handle reporting
+    // document; written to each Handle element's 'used' attribute
     used: Set(String),
   )
 }
@@ -655,7 +669,7 @@ type InnerParam {
     out_page_attrs: List(Attr),
     link_tags: List(String),
     math_tags: List(String),
-    handles_regexp: Regexp,
+    handle_candidates_regexp: Regexp,
   )
 }
 
@@ -669,25 +683,26 @@ fn desugarer_blame(line_no: Int) {
   bl.Des([], name, line_no)
 }
 
-/// Expects a document with root 'GrandWrapper' whose attrs include handle
-/// dictionary entries of the form:
-///
-/// handle=handle_name|page_flag|value|id|path
+/// Expects a document with root 'GrandWrapper' containing structured
+/// `Handle` children with `name`, `page`, `value`, `id`, and `path` attrs.
 ///
 /// Replaces in-text >>handle_name occurrences and href=>>handle_name attrs
 /// by links. The produced link tag and attrs depend on whether the handle's
 /// path equals the current local path. A handle using #page links to the page
 /// path without appending #id.
 ///
+/// A backslash immediately before '>>' escapes the operator. Odd backslash
+/// runs produce literal text; even runs leave the usage active. Each pair of
+/// source backslashes becomes one literal backslash.
+///
+/// Writerly code-block contents are left untouched: definitions
+/// are recognized there by the definition desugarer, but usages
+/// remain literal and do not mark their target handles as used.
+///
 /// This desugarer does not rewrite href=#id links and does not remove the
 /// GrandWrapper node.
 ///
-/// On its way out it appends a 6th 'used' column to every GrandWrapper
-/// handle entry, recording whether the handle was referenced anywhere in
-/// the document:
-///
-/// handle=handle_name|page_flag|value|id|path|used
-/// handle=handle_name|page_flag|value|id|path|
+/// On its way out it adds a boolean `used` attr to every `Handle` child.
 ///
 /// (see `handles_grand_wrapper_warn_unused`, which consumes
 /// that column).
@@ -733,7 +748,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ),
       source: "
         <> GrandWrapper
-          handle=fluescence||AA|_23-super-id|./ch1.html
+          <> Handle
+            name=fluescence
+            page=false
+            value=<<AA>>
+            id=_23-super-id
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -742,7 +762,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=fluescence||AA|_23-super-id|./ch1.html|used
+          <> Handle
+            name=fluescence
+            page=false
+            value=<<AA>>
+            id=_23-super-id
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch1.html
@@ -769,8 +795,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ),
       source: "
         <> GrandWrapper
-          handle=section||Section 1|section-1|./ch1.html
           id=section-1 ./ch1.html
+          <> Handle
+            name=section
+            page=false
+            value=<<Section 1>>
+            id=section-1
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch2.html
@@ -785,8 +816,14 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=section||Section 1|section-1|./ch1.html|used
           id=section-1 ./ch1.html
+          <> Handle
+            name=section
+            page=false
+            value=<<Section 1>>
+            id=section-1
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch2.html
@@ -814,8 +851,18 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ),
       source: "
         <> GrandWrapper
-          handle=lonely||(1.1)|eq-1|./ch1.html
-          handle=in-math-only||(1.2)|eq-2|./ch1.html
+          <> Handle
+            name=lonely
+            page=false
+            value=<<(1.1)>>
+            id=eq-1
+            path=./ch1.html
+          <> Handle
+            name=in-math-only
+            page=false
+            value=<<(1.2)>>
+            id=eq-2
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -826,8 +873,20 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=lonely||(1.1)|eq-1|./ch1.html|
-          handle=in-math-only||(1.2)|eq-2|./ch1.html|
+          <> Handle
+            name=lonely
+            page=false
+            value=<<(1.1)>>
+            id=eq-1
+            path=./ch1.html
+            used=false
+          <> Handle
+            name=in-math-only
+            page=false
+            value=<<(1.2)>>
+            id=eq-2
+            path=./ch1.html
+            used=false
           <> root
             <> Chapter
               path=./ch1.html
@@ -844,7 +903,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
       source: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -854,7 +918,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html|used
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch1.html
@@ -868,7 +938,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
       source: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -878,7 +953,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html|used
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch1.html
@@ -892,7 +973,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
       source: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -902,7 +988,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html|used
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch1.html
@@ -916,7 +1008,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
       source: "
         <> GrandWrapper
-          handle=other||2|eq-id|./ch1.html
+          <> Handle
+            name=other
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -926,7 +1023,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=other||2|eq-id|./ch1.html|
+          <> Handle
+            name=other
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=false
           <> root
             <> Chapter
               path=./ch1.html
@@ -940,7 +1043,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
       source: "
         <> GrandWrapper
-          handle=other||2|eq-id|./ch1.html
+          <> Handle
+            name=other
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -950,7 +1058,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=other||2|eq-id|./ch1.html|
+          <> Handle
+            name=other
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=false
           <> root
             <> Chapter
               path=./ch1.html
@@ -964,7 +1078,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
       source: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
           <> root
             <> Chapter
               path=./ch1.html
@@ -973,7 +1092,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       ",
       expected: "
         <> GrandWrapper
-          handle=some_handle||2|eq-id|./ch1.html|used
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=true
           <> root
             <> Chapter
               path=./ch1.html
@@ -985,6 +1110,219 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
                   '2'
               <>
                 ') is outside of math'
+        ",
+    ),
+
+    // Escaped usages remain literal text and do not mark the handle used.
+    testing.data(
+      param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
+      source: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'see \\>>some_handle for details'
+      ",
+      expected: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=false
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'see >>some_handle for details'
+      ",
+    ),
+
+    // An even backslash run decodes to one literal backslash and leaves the
+    // usage active.
+    testing.data(
+      param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
+      source: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'see \\\\>>some_handle for details'
+      ",
+      expected: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=true
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'see \\'
+              <> a
+                href=./ch1.html#eq-id
+                <>
+                  '2'
+              <>
+                ' for details'
+      ",
+    ),
+
+    // Escaping follows the same parity rule inside math text.
+    testing.data(
+      param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
+      source: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <> Math
+                <>
+                  '\\>>some_handle and \\\\>>some_handle'
+      ",
+      expected: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=true
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <> Math
+                <>
+                  '>>some_handle and \\\\href{./ch1.html#eq-id}{2}'
+      ",
+    ),
+
+    // Escaped href usages become literal href values without substitution.
+    testing.data(
+      param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
+      source: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <> a
+                href=\\>>some_handle
+      ",
+      expected: "
+        <> GrandWrapper
+          <> Handle
+            name=some_handle
+            page=false
+            value=<<2>>
+            id=eq-id
+            path=./ch1.html
+            used=false
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <> a
+                href=>>some_handle
+        ",
+    ),
+
+    // Usage names accept the extension's Unicode handle grammar.
+    testing.data(
+      param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
+      source: "
+        <> GrandWrapper
+          <> Handle
+            name=δοκιμή_2
+            page=false
+            value=<<value>>
+            id=id
+            path=./ch1.html
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'see >>δοκιμή_2'
+      ",
+      expected: "
+        <> GrandWrapper
+          <> Handle
+            name=δοκιμή_2
+            page=false
+            value=<<value>>
+            id=id
+            path=./ch1.html
+            used=true
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'see '
+              <> a
+                href=./ch1.html#id
+                <>
+                  'value'
+      ",
+    ),
+    testing.data(
+      param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
+      source: "
+        <> GrandWrapper
+          <> Handle
+            name=code_handle
+            page=false
+            value=<<code value>>
+            id=code-id
+            path=./chapter.html
+          <> root
+            <> WriterlyCodeBlock
+              <>
+                'literal >>code_handle usage'
+      ",
+      expected: "
+        <> GrandWrapper
+          <> Handle
+            name=code_handle
+            page=false
+            value=<<code value>>
+            id=code-id
+            path=./chapter.html
+            used=false
+          <> root
+            <> WriterlyCodeBlock
+              <>
+                'literal >>code_handle usage'
       ",
     ),
   ]

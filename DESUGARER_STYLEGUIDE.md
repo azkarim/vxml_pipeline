@@ -1,12 +1,10 @@
-# Desugarer rewrite style
+# Desugarer style guide
 
-This document describes the target style for mechanically cleaning up existing
-desugarers. It is intended both for human contributors and for an AI continuing
-the rewrite work.
+This guide records the source conventions used by the package's reusable
+desugarers. Follow it when adding a desugarer or changing an existing one.
 
-The primary constraint is behavioral preservation. A style rewrite must not
-change the public parameter shape, transformation behavior, warnings, errors,
-blame provenance, or test meaning.
+Code organization and naming should make each desugarer's public contract,
+parameter preparation, transformation, and tests readable from top to bottom.
 
 ## File organization
 
@@ -30,23 +28,17 @@ each caller before the callees it invokes, including within chains of private
 implementation helpers. A reader should be able to begin at the constructor and
 continue downward through progressively lower-level details.
 
-Do not preserve the old implementation-first ordering merely because moving
-declarations requires a large diff. Ordinary desugarers should be fully
-reordered into the structure above.
-
-Preserve an implementation's existing internal ordering only as a narrow
-exception when both of these conditions hold:
+An implementation may use a different internal order when both of these
+conditions hold:
 
 - The implementation is substantially large or complex.
-- It already has deliberate semantic organization expressed through section
+- It has deliberate semantic organization expressed through section
   comments, inter-function commentary, or carefully grouped cooperating
   functions that would become less readable or riskier to review if moved.
 
-File length alone does not justify the exception. When using it, retain only
-the carefully organized implementation portion: still place `name`, the beach
+File length alone does not justify the exception. Keep `name`, the beach
 banner, description and constructor, and parameter preparation at the top when
-that can be done without disrupting the semantic sections. Surface the file
-and the specific organization being preserved to the human reviewer.
+that does not disrupt the implementation's semantic sections.
 
 ## Public parameters and private implementation types
 
@@ -72,10 +64,9 @@ type Param =
 Do not use horizontally aligned column comments. `gleam format` changes tuple
 layout and destroys their alignment.
 
-When rewriting an existing desugarer, convert every column-aligned tuple
-comment into a comment immediately preceding its corresponding field. Preserve
-all information from the original field documentation; change only its layout
-and wording where needed for a readable standalone field comment.
+Document each tuple field immediately above that field. Each comment should be
+readable on its own rather than depending on horizontal alignment with other
+fields.
 
 `InnerParam` is private and should normally be a record when it contains
 several semantically distinct values:
@@ -152,10 +143,11 @@ correct—for example, `attrs` takes `have`, not `has`.
 
 ## Constructing the nodemap and transform
 
-Rename `transform_factory` to `inner_param_to_transform`.
+Name the function that constructs a transform from prepared parameters
+`inner_param_to_transform`.
 
-When nodemap construction is short and used only once, remove
-`nodemap_factory` and construct a locally typed nodemap inside
+When nodemap construction is short and used only once, construct a locally
+typed nodemap inside
 `inner_param_to_transform`:
 
 ```gleam
@@ -191,7 +183,7 @@ logic, when it is reused, or when inlining would make
 
 ## Constructor
 
-The target concise form uses `vxml_pipeline/authoring`:
+The standard constructor uses `vxml_pipeline/authoring`:
 
 ```gleam
 pub fn constructor(param: Param) -> Desugarer {
@@ -204,50 +196,31 @@ pub fn constructor(param: Param) -> Desugarer {
 }
 ```
 
-This helper performs the same parameter inspection, validation-error capture,
-and transform construction as the former explicit `Desugarer(...)` block.
-
-Do not change the public `Param` while adopting this constructor form.
+This helper owns parameter inspection, validation-error capture, and transform
+construction.
 
 ## Constructor description
 
 Every public `constructor` should have an accurate documentation comment that
-describes the desugarer's observable transformation. During a rewrite:
+describes the desugarer's observable transformation:
 
-- Preserve an existing description when it still agrees with the code.
-- Bring the description up to date when the implementation and description no
-  longer agree. Treat the implementation and tests as the behavioral source of
-  truth unless there is evidence that the implementation itself is defective.
-- When the description is missing, infer one from the implementation, parameter
-  comments, tests, desugarer name, and any other existing comments. Make the best
-  supported guess rather than leaving the constructor undocumented.
 - Keep descriptions concise and behavioral. Explain what the desugarer does,
   including conditions that materially delimit the transformation; do not
   narrate its internal traversal machinery.
 - Write descriptions as complete sentences: begin with a capital letter and
   end with punctuation. Wrap their `///` lines to roughly 60 characters,
   including the comment prefix.
-- If the intended behavior or wording remains uncertain, still write the best
-  description supported by the code, then surface the uncertainty and inferred
-  interpretation for human review.
+- Keep the description consistent with the implementation and tests.
 
 ## Desugarer section decoration
 
-The existing beach and wave section comments should remain. The beach section
-starts the public desugarer block and should be labeled `Desugarer`, using this
-form:
+Each desugarer uses beach and wave section comments. The beach section starts
+the public desugarer block and is labeled `Desugarer`, using this form:
 
 ```gleam
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️
 // 🏖️🏖️ Desugarer 🏖️🏖️
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
-```
-
-Add this section when it is missing. Remove obsolete lines of this form when
-encountered:
-
-```text
-//------------------------------------------------53
 ```
 
 Do not add a separate implementation banner. The caller-before-callee ordering
@@ -303,8 +276,8 @@ Incorrect normalization changes individual lines until they all have the same
 indentation. Correct normalization shifts every line by the same amount so that
 the least-indented nonblank VXML line begins at column 17.
 
-Do not rewrite fixture content, quoting, or tree structure during indentation
-normalization.
+Preserve fixture content, quoting, and tree structure when normalizing
+indentation.
 
 ## Validation
 
@@ -315,24 +288,16 @@ such as `core.valid_tag` are acceptable when only a yes/no decision is needed.
 Parameter validation belongs in `param_to_inner_param`; the nodemap should
 normally receive prepared data.
 
-## Mechanical procedure
+## Review checklist
 
-For each desugarer:
+Before submitting a desugarer:
 
-1. Read the complete file and identify its public parameter shape and tests.
-2. Rewrite types and comments without changing `Param` semantics.
-3. Add, verify, or correct the constructor description against the code and
-   tests; queue any remaining uncertainty for human review.
-4. Rename callbacks and `inner_param_to_transform` as appropriate.
-5. Adopt the locally typed nodemap when it improves locality.
-6. Adopt `authoring.desugarer` without changing constructor behavior.
-7. Normalize VXML fixture blocks to a minimum indentation of 16 spaces.
-8. Remove obsolete `//------------------------------------------------53` lines.
-9. Run `gleam format` on the touched file.
-10. Run `generate_desugarer_blames.sh` because formatting may shift blame lines.
-11. Run the desugarer's focused assertive tests.
-12. Run `gleam check`.
-13. Periodically run the entire desugarer, Writerly, VXML, and consumer suites.
-
-Keep behavioral changes, broad formatting passes, and style rewrites in
-separate commits whenever possible.
+1. Keep `Param` generic and give complex private data named fields.
+2. Present declarations from the public constructor down through its callees.
+3. Describe the observable contract above `constructor`.
+4. Use the established callback and transform-construction names.
+5. Give a one-use nodemap an explicit local type annotation.
+6. Use the standard beach and wave banners with their required blank lines.
+7. Give multiline VXML fixtures a minimum indentation of 16 spaces.
+8. Run `gleam format` and regenerate desugarer blames.
+9. Run the desugarer's focused tests and the package test suite.

@@ -13,6 +13,7 @@ import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError, DesugaringError,
 }
+import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
@@ -342,7 +343,11 @@ fn handle_assignment_attrs_from_handle_assignments(
   handles
   |> list.map(fn(handle) {
     let #(name, value) = handle
-    Attr(authoring.blame(name, 344), "handle", name <> " " <> value)
+    Attr(
+      authoring.blame(name, 344),
+      "handle",
+      name <> " " <> handle_syntax.encode_value(value),
+    )
   })
 }
 
@@ -497,7 +502,11 @@ fn fancy_attr_processor(
       let assignment_attrs =
         list.map(assignments, fn(handle_assignment) {
           let #(handle_name, handle_value) = handle_assignment
-          Attr(next.blame, "handle", handle_name <> " " <> handle_value)
+          Attr(
+            next.blame,
+            "handle",
+            handle_name <> " " <> handle_syntax.encode_value(handle_value),
+          )
         })
 
       use new_counter <- on.ok(read_counter_definition(next))
@@ -655,8 +664,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
       expected: "
                 <> root
                   counter=QCounter -3
-                  handle=t -4;-5
-                  handle=u -6;-7
+                  handle=t <<-4;-5>>
+                  handle=u <<-6;-7>>
                   <>
                     '-4'
                     '-7'
@@ -675,13 +684,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
       expected: "
                 <> root
                   counter=QCounter -3
-                  handle=z -2
-                  handle=t -2
-                  handle=w -3
-                  handle=b -2.-1
-                  handle=a -2.-1
-                  handle=f -1
-                  handle=g -1
+                  handle=z <<-2>>
+                  handle=t <<-2>>
+                  handle=w <<-3>>
+                  handle=b <<-2.-1>>
+                  handle=a <<-2.-1>>
+                  handle=f <<-1>>
+                  handle=g <<-1>>
                   <>
                     '-2 '
                     '-3'
@@ -700,9 +709,9 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
       expected: "
                 <> root
                   counter=my_counter 5
-                  handle=first-handle 6
-                  handle=second-handle 5
-                  handle=third-handle 6.7
+                  handle=first-handle <<6>>
+                  handle=second-handle <<5>>
+                  handle=third-handle <<6.7>>
                   <>
                     '6'
                     '5'
@@ -720,8 +729,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
       expected: "
                 <> root
                   counter=TestCounter 1
-                  handle=handle^with^caret 2
-                  handle=another^handle 1
+                  handle=handle^with^caret <<2>>
+                  handle=another^handle <<1>>
                   <>
                     '2'
                     '1'

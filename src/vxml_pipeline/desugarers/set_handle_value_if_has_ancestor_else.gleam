@@ -6,6 +6,7 @@ import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError, DesugaringError,
 }
+import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
@@ -95,16 +96,21 @@ fn map_attr(
     "handle" ->
       case attr.val |> string.split_once(" ") {
         Ok(#(_, handle_value)) ->
-          case string.trim(handle_value) == "" {
-            True -> Error(malformed_handle_error(attr))
-            False -> Ok(attr)
+          case handle_syntax.decode_value(handle_value) {
+            Ok(_) -> Ok(attr)
+            Error(_) -> Error(malformed_handle_error(attr))
           }
         Error(Nil) -> {
           let appended_value = case state {
             True -> inner.inside_value
             False -> inner.outside_value
           }
-          Ok(Attr(..attr, val: attr.val <> " " <> appended_value))
+          Ok(
+            Attr(
+              ..attr,
+              val: attr.val <> " " <> handle_syntax.encode_value(appended_value),
+            ),
+          )
         }
       }
     _ -> Ok(attr)
@@ -112,7 +118,7 @@ fn map_attr(
 }
 
 fn malformed_handle_error(attr: Attr) -> DesugaringError {
-  DesugaringError(attr.blame, "handle contains a space but no value follows it")
+  DesugaringError(attr.blame, "assigned handle value must have form <<value>>")
 }
 
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊

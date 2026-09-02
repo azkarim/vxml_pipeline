@@ -47,12 +47,11 @@ The generated `vxml_pipeline/desugarers` module exports the reusable desugarer
 constructors:
 
 ```gleam
-import vxml_pipeline/core
-import vxml_pipeline/desugarers as dl
+import vxml_pipeline/desugarers as ds
 
 let pipeline = [
-  dl.rename(#("Chapter", "section")),
-  dl.append_attribute(#("section", "class", "chapter", core.GoBack)),
+  ds.rename(#("Chapter", "section")),
+  ds.append_class(#("section", "chapter")),
 ]
 ```
 
@@ -61,17 +60,28 @@ Each constructor validates or prepares its parameters when it creates the
 
 ### Authoring a desugarer
 
-Client-defined desugarers are ordinary Gleam modules. The
-`vxml_pipeline/authoring` module packages parameter preparation and transform
+Client-defined desugarers are ordinary Gleam modules. Their constructors accept
+a public-facing `Param`, prepare it once as a private `InnerParam`, and capture
+the prepared value in a reusable transform. Preparation is the place for
+validation and one-time work such as compiling a regular expression.
+
+The `vxml_pipeline/authoring` module packages this preparation and transform
 construction into a `Desugarer`:
 
 ```gleam
+import gleam/list
+import gleam/regexp.{type Regexp}
+import vxml.{Line, T}
+import vxml/blame as blame
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
+  DesugaringError,
 }
+import vxml_pipeline/nodemaps_2_transform as n2t
+import vxml_pipeline/testing
 
-pub const name = "example"
+pub const name = "redact_matching_lines"
 
 pub fn constructor(param: Param) -> Desugarer {
   authoring.desugarer(
@@ -83,20 +93,51 @@ pub fn constructor(param: Param) -> Desugarer {
 }
 
 type Param = String
-type InnerParam = String
+
+type InnerParam {
+  InnerParam(pattern: Regexp)
+}
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
-  Ok(param)
+  case regexp.from_string(param) {
+    Ok(pattern) -> Ok(InnerParam(pattern))
+    Error(_) ->
+      Error(DesugaringError(
+        blame.no_blame,
+        "Invalid regular expression: " <> param,
+      ))
+  }
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
-  fn(vxml) {
-    // Use `inner` to transform `vxml` here.
-    let _ = inner
-    Ok(#(vxml, []))
+  let nodemap: n2t.OneToOneNoErrorNodemap = fn(vxml) {
+    case vxml {
+      T(_, lines) ->
+        T(
+          ..vxml,
+          lines: list.map(lines, fn(line) {
+            Line(
+              ..line,
+              content: case regexp.check(inner.pattern, line.content) {
+                True -> "[redacted]"
+                False -> line.content
+              },
+            )
+          }),
+        )
+      _ -> vxml
+    }
   }
+
+  n2t.one_to_one_no_error_nodemap_2_desugarer_transform(nodemap)
 }
 ```
+
+By convention, `Param` is a structural type composed from tuples, lists,
+options, strings, integers, and booleans. A pipeline can therefore call the
+constructor without importing a desugarer-specific record. `InnerParam` is
+private and may use named records, compiled values, or any other representation
+that makes the implementation clear and efficient.
 
 `authoring` also provides constructors for infallible, no-parameter, and
 `outside`-aware desugarers. `authoring.blame(name, line_no)` creates provenance
@@ -107,9 +148,10 @@ Most reusable desugarers define a typed operation on one node and use
 instead implement `DesugarerTransform` directly when its operation requires
 different traversal behavior.
 
-The repository's desugarer style conventions are recorded in
-`DESUGARER_REWRITE_STYLE.md`. Desugarer testing and application-local
-desugarer registries are described later in this README.
+The repository's desugarer conventions are recorded in the
+[desugarer style guide](https://github.com/vistuleB/vxml_pipeline/blob/main/DESUGARER_STYLEGUIDE.md).
+Desugarer testing and application-local desugarer registries are described
+later in this README.
 
 ## Pipelines and `run_pipeline`
 
@@ -136,10 +178,10 @@ The function requires:
 ```gleam
 import vxml_pipeline as vp
 import vxml_pipeline/core
-import vxml_pipeline/desugarers as dl
+import vxml_pipeline/desugarers as ds
 
 let pipeline: core.Pipeline = [
-  dl.rename(#("Chapter", "section")),
+  ds.rename(#("Chapter", "section")),
 ]
 
 let result =
@@ -206,12 +248,12 @@ as `test/renderer_integration_test.gleam`:
 ```gleam
 import vxml_pipeline as vp
 import vxml_pipeline/core
-import vxml_pipeline/desugarers as dl
+import vxml_pipeline/desugarers as ds
 
 fn pipeline() -> core.Pipeline {
   [
-    dl.rename(#("Chapter", "section")),
-    dl.append_attribute(#("section", "class", "chapter", core.GoBack)),
+    ds.rename(#("Chapter", "section")),
+    ds.append_class(#("section", "chapter")),
   ]
 }
 
@@ -472,16 +514,29 @@ syntax accepted by `--track`.
 `vxml_pipeline/testing` provides VXML-to-VXML test data and collection helpers:
 
 ```gleam
-let collection =
+pub fn assertive_tests() {
   testing.collection(
-    "example",
-    [testing.data(param, "<> Input", "<> Expected")],
-    constructor,
+    name: name,
+    data: [
+      testing.data(
+        param: "password|secret",
+        source: "
+          <> document
+            <>
+              'ordinary line'
+              'the password is swordfish'
+        ",
+        expected: "
+          <> document
+            <>
+              'ordinary line'
+              '[redacted]'
+        ",
+      ),
+    ],
+    constructor: constructor,
   )
-
-let passed =
-  testing.run([collection])
-  |> testing.all_passed
+}
 ```
 
 The test machinery parses the source VXML, applies the desugarer, serializes

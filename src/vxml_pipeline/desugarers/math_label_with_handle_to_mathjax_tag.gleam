@@ -7,6 +7,7 @@ import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
 }
+import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
@@ -16,8 +17,11 @@ pub const name = "math_label_with_handle_to_mathjax_tag"
 // 🏖️🏖️ Desugarer 🏖️🏖️
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
-/// Replaces math labels with tag handles inside configured
-/// ancestor elements.
+/// Replaces math labels and in-text handle definitions with
+/// MathJax tags inside configured ancestor elements. It uses
+/// Writerly's boundary and explicit-'##' definition forms.
+/// Definitions whose closing operator is separated from the
+/// name or decorators by a backslash remain untouched.
 pub fn constructor(param: Param) -> Desugarer {
   authoring.desugarer(
     name: name,
@@ -41,24 +45,42 @@ type InnerParam =
     String,
     // Counter expression.
     String,
-    // Compiled label-matching expression.
+    // Compiled braced-label expression.
+    Regexp,
+    // Compiled bare-definition expression.
+    Regexp,
+    // Compiled explicit-value closer expression.
     Regexp,
   )
 
 fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
   let #(ancestor_tag, counter_expr) = param
-  let pattern =
-    "\\\\(label|tag)\\{([a-zA-Z0-9_.:^\\-']+(?:#[a-zA-Z0-9_:\\-]+)*)##<<([^}]*)\\}|([a-zA-Z0-9_.:^\\-']+(?:#[a-zA-Z0-9_:\\-]+)*)##<<"
-  let assert Ok(re) =
+  let name = "[\\p{L}\\p{N}\\p{M}_.:'\\-\\^]*[\\p{L}\\p{N}\\p{M}_'\\^]"
+  let decorators = "(?:#[\\p{L}\\p{N}\\p{M}_:'\\-]+)*"
+  let assert Ok(braced_re) =
     regexp.compile(
-      pattern,
+      "\\\\(label|tag)\\{(" <> name <> ")(" <> decorators <> ")##<<([^}]*)\\}",
       regexp.Options(case_insensitive: False, multi_line: False),
     )
-  Ok(#(ancestor_tag, counter_expr, re))
+  let assert Ok(bare_re) =
+    regexp.compile(
+      "(?:(^|[ {\\(\\[])("
+        <> name
+        <> ")("
+        <> decorators
+        <> ")|(##)("
+        <> name
+        <> ")("
+        <> decorators
+        <> "))##<<",
+      regexp.Options(case_insensitive: False, multi_line: False),
+    )
+  let assert Ok(closer_re) = regexp.from_string("(\\\\*)(>>##)")
+  Ok(#(ancestor_tag, counter_expr, braced_re, bare_re, closer_re))
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
-  let #(ancestor_tag, counter_expr, re) = inner
+  let #(ancestor_tag, counter_expr, braced_re, bare_re, closer_re) = inner
   let nodemap: n2t.OneToOneEnterExitStatefulNoErrorNodemap(State) =
     n2t.OneToOneEnterExitStatefulNoErrorNodemap(
       on_enter: fn(vxml, state) {
@@ -79,7 +101,9 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
                   ..line,
                   content: replace_labels_in_content(
                     line.content,
-                    re,
+                    braced_re,
+                    bare_re,
+                    closer_re,
                     counter_expr,
                   ),
                 )
@@ -97,50 +121,142 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
 
 fn replace_labels_in_content(
   content: String,
+  braced_re: Regexp,
+  bare_re: Regexp,
+  closer_re: Regexp,
+  counter_expr: String,
+) -> String {
+  content
+  |> replace_braced_labels(braced_re, closer_re, counter_expr)
+  |> replace_bare_labels("", bare_re, closer_re, counter_expr, True)
+}
+
+fn replace_braced_labels(
+  content: String,
   re: Regexp,
+  closer_re: Regexp,
   counter_expr: String,
 ) -> String {
   case regexp.scan(re, content) {
     [] -> content
     [first_match, ..] ->
       case first_match.submatches {
-        [option.Some(keyword), option.Some(name), ..rest] -> {
-          let value = case rest {
-            [option.Some(v), ..] -> v
-            _ -> ""
-          }
+        [option.Some(keyword), option.Some(name), decorators, remainder, ..] -> {
+          let decorators = option.unwrap(decorators, "")
+          let remainder = option.unwrap(remainder, "")
+          let #(possible_value, rest) =
+            handle_syntax.take_explicit_value(remainder, closer_re)
+          let value = option.unwrap(possible_value, "")
           case string.split_once(content, first_match.content) {
             Error(_) -> content
             Ok(#(before, after)) -> {
-              let replacement = case value {
-                "" -> "\\tag{" <> name <> "##<<" <> counter_expr <> "}"
-                existing ->
-                  case keyword {
-                    "label" -> "\\tag{" <> name <> "##<<" <> existing <> "}"
-                    _ -> first_match.content
-                  }
+              let replacement = case value, keyword {
+                "", _ ->
+                  "\\tag{"
+                  <> name
+                  <> decorators
+                  <> "##<<"
+                  <> counter_expr
+                  <> ">>##"
+                  <> "}"
+                existing, "label" ->
+                  "\\tag{"
+                  <> name
+                  <> decorators
+                  <> "##<<"
+                  <> existing
+                  <> ">>##}"
+                _, _ -> first_match.content
               }
               before
               <> replacement
-              <> replace_labels_in_content(after, re, counter_expr)
+              <> rest
+              <> replace_braced_labels(after, re, closer_re, counter_expr)
             }
-          }
-        }
-        [option.None, option.None, option.None, option.Some(bare_name)] -> {
-          case string.split_once(content, first_match.content) {
-            Error(_) -> content
-            Ok(#(before, after)) ->
-              before
-              <> "\\tag{"
-              <> bare_name
-              <> "##<<"
-              <> counter_expr
-              <> "}"
-              <> replace_labels_in_content(after, re, counter_expr)
           }
         }
         _ -> content
       }
+  }
+}
+
+fn replace_bare_labels(
+  remaining: String,
+  done: String,
+  re: Regexp,
+  closer_re: Regexp,
+  counter_expr: String,
+  at_normal_boundary: Bool,
+) -> String {
+  case regexp.scan(re, remaining) {
+    [] -> done <> remaining
+    [first_match, ..] -> {
+      let #(prefix, name, decorators, line_start_form) = case
+        first_match.submatches
+      {
+        [prefix, option.Some(name), decorators, ..] -> {
+          let prefix = option.unwrap(prefix, "")
+          #(prefix, name, option.unwrap(decorators, ""), prefix == "")
+        }
+        [_, _, _, option.Some(_), option.Some(name), decorators] -> #(
+          "",
+          name,
+          option.unwrap(decorators, ""),
+          False,
+        )
+        _ -> #("", "", "", False)
+      }
+      case name, string.split_once(remaining, first_match.content) {
+        "", _ -> done <> remaining
+        _, Error(_) -> done <> remaining
+        _, Ok(#(before, after)) -> {
+          let content_before = done <> before
+          let content_through_prefix = content_before <> prefix
+          case
+            line_start_form
+            && !{ content_before == "" || at_normal_boundary && before == "" }
+            || string.ends_with(content_through_prefix, "\\label{")
+            || string.ends_with(content_through_prefix, "\\tag{")
+          {
+            True ->
+              replace_bare_labels(
+                after,
+                done <> before <> first_match.content,
+                re,
+                closer_re,
+                counter_expr,
+                False,
+              )
+            False -> {
+              let #(possible_value, rest) =
+                handle_syntax.take_explicit_value(after, closer_re)
+              let value = case possible_value {
+                option.Some("") | option.None -> counter_expr
+                option.Some(value) -> value
+              }
+              let next_is_normal_boundary = option.is_some(possible_value)
+              replace_bare_labels(
+                rest,
+                done
+                  <> before
+                  <> prefix
+                  <> "\\tag{"
+                  <> name
+                  <> decorators
+                  <> "##<<"
+                  <> value
+                  <> ">>##"
+                  <> "}",
+                re,
+                closer_re,
+                counter_expr,
+                next_is_normal_boundary,
+              )
+            }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -153,54 +269,54 @@ type State =
 
 fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
   [
-    // Test 1: \label{name##<<} inside MathBlock → fills counter
+    // Test 1: \label{name##<<>>##} inside MathBlock → fills counter
     testing.data(
       param: #("MathBlock", "::øøSectionCounter.::++EquationCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\label{eq:lebesgue##<<}'
+              'a = b \\label{eq:lebesgue##<<>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:lebesgue##<<::øøSectionCounter.::++EquationCounter}'
+              'a = b \\tag{eq:lebesgue##<<::øøSectionCounter.::++EquationCounter>>##}'
         ",
     ),
 
-    // Test 2: \label{name##<<} outside ancestor tag → no change
+    // Test 2: \label{name##<<>>##} outside ancestor tag → no change
     testing.data(
       param: #("MathBlock", "::øøSectionCounter.::++EquationCounter"),
       source: "
         <> root
           <>
-            'a = b \\label{eq:lebesgue##<<}'
+            'a = b \\label{eq:lebesgue##<<>>##}'
         ",
       expected: "
         <> root
           <>
-            'a = b \\label{eq:lebesgue##<<}'
+            'a = b \\label{eq:lebesgue##<<>>##}'
         ",
     ),
 
-    // Test 3: multiple \label{name##<<} on separate lines
+    // Test 3: multiple \label{name##<<>>##} on separate lines
     testing.data(
       param: #("MathBlock", "::øøSectionCounter.::++EquationCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\label{eq:first##<<}'
-              'c = d \\label{eq:second##<<}'
+              'a = b \\label{eq:first##<<>>##}'
+              'c = d \\label{eq:second##<<>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:first##<<::øøSectionCounter.::++EquationCounter}'
-              'c = d \\tag{eq:second##<<::øøSectionCounter.::++EquationCounter}'
+              'a = b \\tag{eq:first##<<::øøSectionCounter.::++EquationCounter>>##}'
+              'c = d \\tag{eq:second##<<::øøSectionCounter.::++EquationCounter>>##}'
         ",
     ),
 
@@ -211,30 +327,30 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> root
           <> MathBlock
             <>
-              'x = y \\label{eq:sec-1:item##<<}'
+              'x = y \\label{eq:sec-1:item##<<>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'x = y \\tag{eq:sec-1:item##<<::øøSectionCounter.::++EquationCounter}'
+              'x = y \\tag{eq:sec-1:item##<<::øøSectionCounter.::++EquationCounter>>##}'
         ",
     ),
 
-    // Test 5: \tag{name##<<value} with value already set → no change
+    // Test 5: \tag{name##<<value>>##} with value already set → no change
     testing.data(
       param: #("MathBlock", "::øøSectionCounter.::++EquationCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:explicit##<<A}'
+              'a = b \\tag{eq:explicit##<<A>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:explicit##<<A}'
+              'a = b \\tag{eq:explicit##<<A>>##}'
         ",
     ),
 
@@ -244,63 +360,63 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       source: "
         <> root
           <>
-            'a = b \\label{eq:lebesgue##<<}'
+            'a = b \\label{eq:lebesgue##<<>>##}'
         ",
       expected: "
         <> root
           <>
-            'a = b \\tag{eq:lebesgue##<<::++EqCounter}'
+            'a = b \\tag{eq:lebesgue##<<::++EqCounter>>##}'
         ",
     ),
 
-    // Test 7: two \label{##<<} on the same line
+    // Test 7: two \label{##<<>>##} on the same line
     testing.data(
       param: #("MathBlock", "::++EqCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              '& a = b \\label{eq:line1##<<} & c = d \\label{eq:line2##<<}'
+              '& a = b \\label{eq:line1##<<>>##} & c = d \\label{eq:line2##<<>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              '& a = b \\tag{eq:line1##<<::++EqCounter} & c = d \\tag{eq:line2##<<::++EqCounter}'
+              '& a = b \\tag{eq:line1##<<::++EqCounter>>##} & c = d \\tag{eq:line2##<<::++EqCounter>>##}'
         ",
     ),
 
-    // Test 8: \tag{name##<<} (tag form, empty value) → fills counter
+    // Test 8: \tag{name##<<>>##} (tag form, empty value) → fills counter
     testing.data(
       param: #("MathBlock", "::++EqCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:foo##<<}'
+              'a = b \\tag{eq:foo##<<>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:foo##<<::++EqCounter}'
+              'a = b \\tag{eq:foo##<<::++EqCounter>>##}'
         ",
     ),
 
-    // Test 9: \label{name##<<value} → changes \label to \tag, preserves value
+    // Test 9: \label{name##<<value>>##} → changes \label to \tag, preserves value
     testing.data(
       param: #("MathBlock", "::++EqCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\label{eq:foo##<<A}'
+              'a = b \\label{eq:foo##<<A>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:foo##<<A}'
+              'a = b \\tag{eq:foo##<<A>>##}'
         ",
     ),
 
@@ -328,13 +444,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> root
           <> MathBlock
             <>
-              'a = b eq:lebesgue##<<'
+              'a = b eq:lebesgue##<<>>##'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:lebesgue##<<::++EqCounter}'
+              'a = b \\tag{eq:lebesgue##<<::++EqCounter>>##}'
         ",
     ),
 
@@ -344,12 +460,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       source: "
         <> root
           <>
-            'a = b eq:lebesgue##<<'
+            'a = b eq:lebesgue##<<>>##'
         ",
       expected: "
         <> root
           <>
-            'a = b eq:lebesgue##<<'
+            'a = b eq:lebesgue##<<>>##'
         ",
     ),
 
@@ -359,12 +475,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       source: "
         <> root
           <>
-            'a = b eq:lebesgue##<<'
+            'a = b eq:lebesgue##<<>>##'
         ",
       expected: "
         <> root
           <>
-            'a = b \\tag{eq:lebesgue##<<::++EqCounter}'
+            'a = b \\tag{eq:lebesgue##<<::++EqCounter>>##}'
         ",
     ),
 
@@ -375,30 +491,30 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> root
           <> MathBlock
             <>
-              'a + b = c eq:lebesgue#page##<<'
+              'a + b = c eq:lebesgue#page##<<>>##'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a + b = c \\tag{eq:lebesgue#page##<<::++EqCounter}'
+              'a + b = c \\tag{eq:lebesgue#page##<<::++EqCounter>>##}'
         ",
     ),
 
-    // Test 16: \label{name#decorator##<<} → converts to \tag, decorator preserved
+    // Test 16: \label{name#decorator##<<>>##} → converts to \tag, decorator preserved
     testing.data(
       param: #("MathBlock", "::++EqCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\label{eq:foo#page##<<}'
+              'a = b \\label{eq:foo#page##<<>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:foo#page##<<::++EqCounter}'
+              'a = b \\tag{eq:foo#page##<<::++EqCounter>>##}'
         ",
     ),
 
@@ -409,47 +525,47 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> root
           <> MathBlock
             <>
-              'x = y eq:thm#page#glossary##<<'
+              'x = y eq:thm#page#glossary##<<>>##'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'x = y \\tag{eq:thm#page#glossary##<<::++EqCounter}'
+              'x = y \\tag{eq:thm#page#glossary##<<::++EqCounter>>##}'
         ",
     ),
 
-    // Test 18: \tag{name#decorator##<<} with existing value → unchanged
+    // Test 18: \tag{name#decorator##<<>>##} with existing value → unchanged
     testing.data(
       param: #("MathBlock", "::++EqCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:foo#page##<<A}'
+              'a = b \\tag{eq:foo#page##<<A>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:foo#page##<<A}'
+              'a = b \\tag{eq:foo#page##<<A>>##}'
         ",
     ),
 
-    // Test 19: \label{name#decorator##<<value} → changes to \tag, preserves value and decorator
+    // Test 19: \label{name#decorator##<<value>>##} → changes to \tag, preserves value and decorator
     testing.data(
       param: #("MathBlock", "::++EqCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\label{eq:foo#page##<<A}'
+              'a = b \\label{eq:foo#page##<<A>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:foo#page##<<A}'
+              'a = b \\tag{eq:foo#page##<<A>>##}'
         ",
     ),
 
@@ -459,12 +575,12 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
       source: "
         <> root
           <>
-            'a + b = c eq:lebesgue#page##<<'
+            'a + b = c eq:lebesgue#page##<<>>##'
         ",
       expected: "
         <> root
           <>
-            'a + b = c eq:lebesgue#page##<<'
+            'a + b = c eq:lebesgue#page##<<>>##'
         ",
     ),
 
@@ -475,13 +591,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> root
           <> MathBlock
             <>
-              'a = b left-reduction-w'##<<'
+              'a = b left-reduction-w'##<<>>##'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{left-reduction-w'##<<::++EqCounter}'
+              'a = b \\tag{left-reduction-w'##<<::++EqCounter>>##}'
         ",
     ),
 
@@ -492,33 +608,116 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> root
           <> MathBlock
             <>
-              'a = b \\label{left-reduction-w'##<<}'
+              'a = b \\label{left-reduction-w'##<<>>##}'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{left-reduction-w'##<<::++EqCounter}'
+              'a = b \\tag{left-reduction-w'##<<::++EqCounter>>##}'
         ",
     ),
 
-    // Test 14: bare name##<< alongside \label{...} on separate lines
+    // Test 14: bare name##<< alongside \label{...>>##} on separate lines
     testing.data(
       param: #("MathBlock", "::++EqCounter"),
       source: "
         <> root
           <> MathBlock
             <>
-              'a = b \\label{eq:first##<<}'
-              'c = d eq:second##<<'
+              'a = b \\label{eq:first##<<>>##}'
+              'c = d eq:second##<<>>##'
         ",
       expected: "
         <> root
           <> MathBlock
             <>
-              'a = b \\tag{eq:first##<<::++EqCounter}'
-              'c = d \\tag{eq:second##<<::++EqCounter}'
+              'a = b \\tag{eq:first##<<::++EqCounter>>##}'
+              'c = d \\tag{eq:second##<<::++EqCounter>>##}'
         ",
+    ),
+
+    // Any backslash breaks adjacency and leaves the label untouched.
+    testing.data(
+      param: #("MathBlock", "::++EqCounter"),
+      source: "
+        <> root
+          <> MathBlock
+            <>
+              'a = b \\label{eq:literal\\##<<>>##}'
+        ",
+      expected: "
+        <> root
+          <> MathBlock
+            <>
+              'a = b \\label{eq:literal\\##<<>>##}'
+        ",
+    ),
+
+    // Definition escaping does not use the usage operator's parity rule.
+    testing.data(
+      param: #("MathBlock", "::++EqCounter"),
+      source: "
+        <> root
+          <> MathBlock
+            <>
+              'a = b \\label{eq:active\\\\##<<>>##}'
+        ",
+      expected: "
+        <> root
+          <> MathBlock
+            <>
+              'a = b \\label{eq:active\\\\##<<>>##}'
+        ",
+    ),
+
+    // The explicit opener permits a definition at an arbitrary position.
+    testing.data(
+      param: #("MathBlock", "::++EqCounter"),
+      source: "
+        <> root
+          <> MathBlock
+            <>
+              'a=b##eq:active#page##<<>>##'
+        ",
+      expected: "
+        <> root
+          <> MathBlock
+            <>
+              'a=b\\tag{eq:active#page##<<::++EqCounter>>##}'
+        ",
+    ),
+
+    // Unicode handle names and decorators follow the extension grammar.
+    testing.data(
+      param: #("MathBlock", "::++EqCounter"),
+      source: "
+        <> root
+          <> MathBlock
+            <>
+              'a = b δοκιμή_2#σελίδα##<<>>##'
+        ",
+      expected: "
+        <> root
+          <> MathBlock
+            <>
+              'a = b \\tag{δοκιμή_2#σελίδα##<<::++EqCounter>>##}'
+        ",
+    ),
+    testing.data(
+      param: #("MathBlock", "::++EqCounter"),
+      source: "
+        <> root
+          <> MathBlock
+            <>
+              '##one##<<A>>##two##<<>>##'
+      ",
+      expected: "
+        <> root
+          <> MathBlock
+            <>
+              '\\tag{one##<<A>>##}\\tag{two##<<::++EqCounter>>##}'
+      ",
     ),
   ]
 }

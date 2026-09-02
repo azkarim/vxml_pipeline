@@ -8,95 +8,96 @@ import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
 }
+import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-// Extract the value token after ##<<:
-//   - stops at the first space when not inside a bracket
-//   - stops at the first | when not inside a bracket
-//   - stops at an unmatched closing bracket (depth would go negative)
-//   - stops at end of string
-fn do_extract_value(remaining: String, depth: Int, acc: String) -> String {
-  case string.pop_grapheme(remaining) {
-    Error(_) -> acc
-    Ok(#(char, rest)) ->
-      case char {
-        "(" | "[" | "{" -> do_extract_value(rest, depth + 1, acc <> char)
-        ")" | "]" | "}" ->
-          case depth {
-            0 -> acc
-            _ -> do_extract_value(rest, depth - 1, acc <> char)
-          }
-        " " ->
-          case depth {
-            0 -> acc
-            _ -> do_extract_value(rest, depth, acc <> char)
-          }
-        "|" ->
-          case depth {
-            0 -> acc
-            _ -> do_extract_value(rest, depth, acc <> char)
-          }
-        _ -> do_extract_value(rest, depth, acc <> char)
-      }
-  }
-}
-
-fn extract_value(s: String) -> String {
-  do_extract_value(s, 0, "")
-}
-
 // Scan a line's content for in-text handle definitions.
 // Processes left-to-right, replacing each valid occurrence of
-//   PRECEDING_CHAR + HANDLE_NAME + ##<< + VALUE
+//   PRECEDING_CHAR + HANDLE_NAME + DECORATORS + ##<< + VALUE
+// or
+//   ## + HANDLE_NAME + DECORATORS + ##<< + VALUE
 // with
 //   PRECEDING_CHAR + VALUE
 // and collecting handle attrs for the parent V node.
-fn replacement_prefix(preceding_char: String) -> String {
-  case preceding_char {
-    "#" -> ""
-    _ -> preceding_char
-  }
-}
-
 fn process_content(
   remaining: String,
   done: String,
   attrs: List(Attr),
-  re: Regexp,
+  inner: InnerParam,
   blame: Blame,
+  at_normal_boundary: Bool,
 ) -> #(String, List(Attr)) {
-  case regexp.scan(re, remaining) {
+  let #(definition_regexp, closer_regexp) = inner
+  case regexp.scan(definition_regexp, remaining) {
     [] -> #(done <> remaining, attrs)
     [first_match, ..] -> {
-      let preceding_char = case first_match.submatches {
-        [Some(pc), ..] -> pc
-        _ -> ""
-      }
-      let handle_name = case first_match.submatches {
-        [_, Some(hn), ..] -> hn
-        _ -> ""
+      let #(prefix, handle_name, decorators, line_start_form) = case
+        first_match.submatches
+      {
+        [prefix, Some(name), decorators, ..] -> {
+          let prefix = option.unwrap(prefix, "")
+          #(prefix, name, option.unwrap(decorators, ""), prefix == "")
+        }
+        [_, _, _, Some(_), Some(name), decorators] -> #(
+          "",
+          name,
+          option.unwrap(decorators, ""),
+          False,
+        )
+        _ -> #("", "", "", False)
       }
       case handle_name, string.split_once(remaining, first_match.content) {
         "", _ -> #(done <> remaining, attrs)
         _, Error(_) -> #(done <> remaining, attrs)
         _, Ok(#(before, after_marker)) -> {
-          let value = extract_value(after_marker)
-          let rest = string.drop_start(after_marker, string.length(value))
-          let attr_val = core.normalize_spaces(handle_name <> " " <> value)
-          let new_attr = Attr(blame, "handle", attr_val)
-          let new_done =
-            done <> before <> replacement_prefix(preceding_char) <> value
-          process_content(rest, new_done, [new_attr, ..attrs], re, blame)
+          let content_before = done <> before
+          // `^` in the regexp is relative to `remaining`; only accept it
+          // at the original line start or immediately after a consumed closer.
+          case
+            line_start_form
+            && !{ content_before == "" || at_normal_boundary && before == "" }
+          {
+            True ->
+              process_content(
+                after_marker,
+                done <> before <> first_match.content,
+                attrs,
+                inner,
+                blame,
+                False,
+              )
+            False -> {
+              let #(possible_value, rest) =
+                handle_syntax.take_explicit_value(after_marker, closer_regexp)
+              let value = option.unwrap(possible_value, "")
+              let next_is_normal_boundary = option.is_some(possible_value)
+              let decorated_handle_name = handle_name <> decorators
+              let attr_val =
+                decorated_handle_name
+                <> " "
+                <> handle_syntax.encode_value(value)
+              let new_attr = Attr(blame, "handle", attr_val)
+              let new_done = done <> before <> prefix <> value
+              process_content(
+                rest,
+                new_done,
+                [new_attr, ..attrs],
+                inner,
+                blame,
+                next_is_normal_boundary,
+              )
+            }
+          }
         }
       }
     }
   }
 }
 
-fn process_line(line: Line, re: Regexp) -> #(Line, List(Attr)) {
+fn process_line(line: Line, inner: InnerParam) -> #(Line, List(Attr)) {
   let #(new_content, new_attrs) =
-    process_content(line.content, "", [], re, line.blame)
+    process_content(line.content, "", [], inner, line.blame, True)
   #(Line(..line, content: new_content), new_attrs)
 }
 
@@ -108,12 +109,12 @@ type State =
 fn on_text(
   vxml: VXML,
   state: State,
-  re: Regexp,
+  inner: InnerParam,
 ) -> Result(#(VXML, State), DesugaringError) {
   let assert T(blame, lines) = vxml
   let #(new_line_attrs, new_lines) =
     list.map_fold(lines, [], fn(acc_attrs, line) {
-      let #(new_line, line_attrs) = process_line(line, re)
+      let #(new_line, line_attrs) = process_line(line, inner)
       #(list.append(line_attrs, acc_attrs), new_line)
     })
   Ok(#(T(blame, new_lines), list.append(new_line_attrs, state)))
@@ -151,25 +152,24 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
 }
 
 fn param_to_inner_param(_param: Param) -> Result(InnerParam, DesugaringError) {
-  // Matches: (start of line | space | '#' | '(' | '[')(handleName[#decorator]*)##<<
-  // Handle chars:    letters, digits, _, ., :, -, ^
-  // Handle end chars: letters, digits, _
-  // Decorator chars:  same minus . and ^
+  // A definition uses either a normal left boundary or an explicit `##`
+  // opener. The closing `##<<` must be directly adjacent.
   let in_text_def_pattern =
-    "(^|[# {\\(\\[])([a-zA-Z0-9_.:\\-\\^']*[a-zA-Z0-9_'](?:#[a-zA-Z0-9_:\\-]+)*)##<<"
-  let assert Ok(re) =
+    "(?:(^|[ {\\(\\[])([\\p{L}\\p{N}\\p{M}_.:'\\-\\^]*[\\p{L}\\p{N}\\p{M}_'\\^])((?:#[\\p{L}\\p{N}\\p{M}_:'\\-]+)*)|(##)([\\p{L}\\p{N}\\p{M}_.:'\\-\\^]*[\\p{L}\\p{N}\\p{M}_'\\^])((?:#[\\p{L}\\p{N}\\p{M}_:'\\-]+)*))##<<"
+  let assert Ok(definition_regexp) =
     regexp.compile(
       in_text_def_pattern,
       regexp.Options(case_insensitive: False, multi_line: False),
     )
-  Ok(re)
+  let assert Ok(closer_regexp) = regexp.from_string("(\\\\*)(>>##)")
+  Ok(#(definition_regexp, closer_regexp))
 }
 
 type Param =
   Nil
 
 type InnerParam =
-  Regexp
+  #(Regexp, Regexp)
 
 pub const name = "handles_generate_v_definitions_from_t_definitions"
 
@@ -180,31 +180,43 @@ pub const name = "handles_generate_v_definitions_from_t_definitions"
 /// Scans every text node (T) for in-text handle
 /// definitions of the form
 ///
-///   PRECEDING_CHAR handleName[#decorator...]##<<VALUE
+///   BOUNDARY handleName[#decorator...]##<<VALUE>>##
+///   ##handleName[#decorator...]##<<VALUE>>##
 ///
-/// where PRECEDING_CHAR is the start of the line, a space, '#', '(' or '[';
-/// handleName must satisfy the handle-name regex;
-/// each #decorator consists of '#' followed by one
-/// or more decorator chars; and VALUE is everything
-/// after '##<<' up to the first un-bracketed space or '|',
-/// end of string, or unmatched closing bracket.
+/// The boundary form is recognized at the start of a line,
+/// after a space, '{', '(' or '[', or immediately after a
+/// consumed value closer. The explicit '##' form can occur
+/// anywhere. Handle names and decorators use the Writerly
+/// extension's Unicode-aware grammar. VALUE is the
+/// single-line content up to the first
+/// unescaped '>>##'. Odd/even backslash parity controls
+/// closer escaping, and escape backslashes are removed. An
+/// active closer is consumed eagerly; its final '##' is not
+/// reused as an explicit opener. If no closer exists, the
+/// value is empty and scanning restarts immediately after
+/// '##<<'. The same rules apply inside Writerly code blocks.
 ///
 /// For each match found, the desugarer:
 ///
 ///   1. Replaces the matched span with just
-///      PRECEDING_CHAR + VALUE in the text, except
-///      that a '#' preceding char is removed.
-///   2. Adds a 'handle=handleName VALUE' attribute
+///      BOUNDARY + VALUE in the text. The explicit '##'
+///      opener is removed.
+///   2. Adds a 'handle=handleName <<VALUE>>' attribute
 ///      to the closest ancestor V node of the T node.
+///      Every decorator is copied after the handle name;
+///      this desugarer does not interpret decorator semantics.
 ///
 /// If '##<<' is found but what precedes it does not
 /// form a valid handle-name pattern (or has no valid
 /// preceding char), that occurrence is left untouched
 /// with no error or warning.
 ///
+/// Any backslash between the name or decorators and '##<<'
+/// breaks the required adjacency, so the text is preserved.
+///
 /// Intended to run before handles_add_ids so that the
-/// generated 'handle=' attrs are in the same
-/// 'name value' format that handles_add_ids expects.
+/// generated 'handle=' attrs are in the strict
+/// 'name <<value>>' format that handles_add_ids expects.
 pub fn constructor() -> Desugarer {
   let assert Ok(inner) = param_to_inner_param(Nil)
   authoring.no_param_desugarer(
@@ -219,431 +231,152 @@ pub fn constructor() -> Desugarer {
 
 fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
   [
-    // Test 1: basic single handle definition (space as preceding char)
     testing.data_no_param(
       source: "
         <> root
           <>
-            'hello handleBob##<<Bobbba is here'
-        ",
+            'see name##<<value | with spaces  >>## rest'
+      ",
       expected: "
         <> root
-          handle=handleBob Bobbba
+          handle=name <<value | with spaces  >>
           <>
-            'hello Bobbba is here'
-        ",
+            'see value | with spaces   rest'
+      ",
     ),
-
-    // Test 2: handle preceded by '('
     testing.data_no_param(
       source: "
         <> root
           <>
-            '(handleBob##<<Bobbba rest)'
-        ",
+            'first##<<ordinary second##<<value>>##'
+      ",
       expected: "
         <> root
-          handle=handleBob Bobbba
+          handle=first <<ordinary second##<<value>>
           <>
-            '(Bobbba rest)'
-        ",
+            'ordinary second##<<value'
+      ",
     ),
-
-    // Test 3: handle preceded by '['
     testing.data_no_param(
       source: "
         <> root
           <>
-            '[handleBob##<<Bobbba rest]'
-        ",
+            'name##<<before \\>>## after>>##'
+      ",
       expected: "
         <> root
-          handle=handleBob Bobbba
+          handle=name <<before >>## after>>
           <>
-            '[Bobbba rest]'
-        ",
+            'before >>## after'
+      ",
     ),
-
-    // Test 4: no match because '##<<' has no valid preceding character
     testing.data_no_param(
       source: "
         <> root
           <>
-            'prefix/handleBob##<<value rest'
-        ",
+            'name##<<before \\\\>>## after'
+      ",
+      expected: "
+        <> root
+          handle=name <<before \\>>
+          <>
+            'before \\ after'
+      ",
+    ),
+    testing.data_no_param(
+      source: "
+        <> root
+          <>
+            'first##<<ordinary second##<<'
+      ",
+      expected: "
+        <> root
+          handle=first <<>>
+          handle=second <<>>
+          <>
+            'ordinary '
+      ",
+    ),
+    testing.data_no_param(
+      source: "
+        <> root
+          <>
+            'prefix##name#page#glossary##<<value>>## rest'
+      ",
+      expected: "
+        <> root
+          handle=name#page#glossary <<value>>
+          <>
+            'prefixvalue rest'
+      ",
+    ),
+    testing.data_no_param(
+      source: "
+        <> root
+          <>
+            'see δοκιμή_2#σελίδα##<<τιμή>>## rest'
+      ",
+      expected: "
+        <> root
+          handle=δοκιμή_2#σελίδα <<τιμή>>
+          <>
+            'see τιμή rest'
+      ",
+    ),
+    testing.data_no_param(
+      source: "
+        <> root
+          <>
+            'punctuation/name##<<value>>##'
+      ",
       expected: "
         <> root
           <>
-            'prefix/handleBob##<<value rest'
-        ",
+            'punctuation/name##<<value>>##'
+      ",
     ),
-
-    // Test 5: value extraction stops at unmatched closing bracket
     testing.data_no_param(
       source: "
         <> root
           <>
-            'foo handleBob##<<Value) rest'
-        ",
+            '##one##<<first value>>##two##<<second value>>##'
+      ",
       expected: "
         <> root
-          handle=handleBob Value
+          handle=one <<first value>>
+          handle=two <<second value>>
           <>
-            'foo Value) rest'
-        ",
+            'first valuesecond value'
+      ",
     ),
-
-    // Test 6: value with balanced parentheses (space inside parens is not a stop)
     testing.data_no_param(
       source: "
         <> root
           <>
-            'def handleFn##<<f(x y) more'
-        ",
+            '##one##<<first>>####two##<<'
+      ",
       expected: "
         <> root
-          handle=handleFn f(x y)
+          handle=one <<first>>
+          handle=two <<>>
           <>
-            'def f(x y) more'
-        ",
+            'first'
+      ",
     ),
-
-    // Test 7: value extends to end of line (no terminating space)
     testing.data_no_param(
       source: "
         <> root
-          <>
-            'def handleFoo##<<TheValue'
-        ",
-      expected: "
-        <> root
-          handle=handleFoo TheValue
-          <>
-            'def TheValue'
-        ",
-    ),
-
-    // Test 8: empty value (##<< at end of line)
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'foo handleBob##<<'
-        ",
-      expected: "
-        <> root
-          handle=handleBob
-          <>
-            'foo '
-        ",
-    ),
-
-    // Test 9: handle with a single decorator
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'see handleBob#page##<<TheValue rest'
-        ",
-      expected: "
-        <> root
-          handle=handleBob#page TheValue
-          <>
-            'see TheValue rest'
-        ",
-    ),
-
-    // Test 10: handle with multiple decorators
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'see handleBob#page#glossary##<<TheValue rest'
-        ",
-      expected: "
-        <> root
-          handle=handleBob#page#glossary TheValue
-          <>
-            'see TheValue rest'
-        ",
-    ),
-
-    // Test 11: two definitions on the same line
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'alpha handleA##<<ValA and handleB##<<ValB end'
-        ",
-      expected: "
-        <> root
-          handle=handleA ValA
-          handle=handleB ValB
-          <>
-            'alpha ValA and ValB end'
-        ",
-    ),
-
-    // Test 12: definitions on different lines of the same T node
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'line1 handleA##<<ValA rest'
-            'line2 handleB##<<ValB rest'
-        ",
-      expected: "
-        <> root
-          handle=handleA ValA
-          handle=handleB ValB
-          <>
-            'line1 ValA rest'
-            'line2 ValB rest'
-        ",
-    ),
-
-    // Test 13: handle in inner V goes to inner V; handle in outer V goes to outer V
-    testing.data_no_param(
-      source: "
-        <> root
-          <> Outer
+          <> WriterlyCodeBlock
             <>
-              'outer text handleOuter##<<OuterVal rest'
-            <> Inner
-              <>
-                'inner text handleInner##<<InnerVal rest'
-        ",
+              'code_handle##<<code value>>##'
+      ",
       expected: "
         <> root
-          <> Outer
-            handle=handleOuter OuterVal
+          <> WriterlyCodeBlock
+            handle=code_handle <<code value>>
             <>
-              'outer text OuterVal rest'
-            <> Inner
-              handle=handleInner InnerVal
-              <>
-                'inner text InnerVal rest'
-        ",
-    ),
-
-    // Test 14: no ##<< in content at all — no change
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'just ordinary text here'
-        ",
-      expected: "
-        <> root
-          <>
-            'just ordinary text here'
-        ",
-    ),
-
-    // Test 15: handle preceded by '(' with nested balanced brackets in value
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            '(handleEq##<<f(g(x)) rest'
-        ",
-      expected: "
-        <> root
-          handle=handleEq f(g(x))
-          <>
-            '(f(g(x)) rest'
-        ",
-    ),
-
-    // Test 16: existing V attrs are preserved, handle attrs prepended
-    testing.data_no_param(
-      source: "
-        <> root
-          <> Para
-            class=intro
-            <>
-              'hello handleBob##<<Bobbba done'
-        ",
-      expected: "
-        <> root
-          <> Para
-            handle=handleBob Bobbba
-            class=intro
-            <>
-              'hello Bobbba done'
-        ",
-    ),
-
-    // Test 17: two separate T nodes in the same V, each contributing a handle
-    testing.data_no_param(
-      source: "
-        <> root
-          <> Para
-            <>
-              'first handleA##<<ValA end'
-            <>
-              'second handleB##<<ValB end'
-        ",
-      expected: "
-        <> root
-          <> Para
-            handle=handleA ValA
-            handle=handleB ValB
-            <>
-              'first ValA end'
-            <>
-              'second ValB end'
-        ",
-    ),
-
-    // Test 18: handle name with dots and colons (valid handle chars)
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'ref section:1.2##<<SectionTitle rest'
-        ",
-      expected: "
-        <> root
-          handle=section:1.2 SectionTitle
-          <>
-            'ref SectionTitle rest'
-        ",
-    ),
-
-    // Test 19: value with balanced square brackets
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'see handleList##<<[a b] more'
-        ",
-      expected: "
-        <> root
-          handle=handleList [a b]
-          <>
-            'see [a b] more'
-        ",
-    ),
-
-    // Test 20: handle definition at line start
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'handleBob##<<value rest'
-        ",
-      expected: "
-        <> root
-          handle=handleBob value
-          <>
-            'value rest'
-        ",
-    ),
-
-    // Test 21: handle preceded by '{' (LaTeX \tag{handle##<<value} pattern)
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            '\\\\tag{eq:firstline##<<(A)}'
-        ",
-      expected: "
-        <> root
-          handle=eq:firstline (A)
-          <>
-            '\\\\tag{(A)}'
-        ",
-    ),
-
-    // Test 22: handle name with prime char (e.g. left-reduction-w')
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'see left-reduction-w'##<<TheValue rest'
-        ",
-      expected: "
-        <> root
-          handle=left-reduction-w' TheValue
-          <>
-            'see TheValue rest'
-        ",
-    ),
-
-    // Test 23: prime at end of handle in LaTeX \tag context
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            '\\\\tag{left-reduction-w'##<<(A)}'
-        ",
-      expected: "
-        <> root
-          handle=left-reduction-w' (A)
-          <>
-            '\\\\tag{(A)}'
-        ",
-    ),
-
-    // Test 24: handle preceded by '#' drops the prefix marker
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'see #handleBob##<<Bobbba rest'
-        ",
-      expected: "
-        <> root
-          handle=handleBob Bobbba
-          <>
-            'see Bobbba rest'
-        ",
-    ),
-
-    // Test 25: line-start '#' prefix marker is dropped
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            '#handleBob##<<Bobbba rest'
-        ",
-      expected: "
-        <> root
-          handle=handleBob Bobbba
-          <>
-            'Bobbba rest'
-        ",
-    ),
-
-    // Test 26: value extraction stops at unbracketed pipe
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'see handleBob##<<Bobbba|rest'
-        ",
-      expected: "
-        <> root
-          handle=handleBob Bobbba
-          <>
-            'see Bobbba|rest'
-        ",
-    ),
-
-    // Test 27: value extraction keeps pipe inside brackets
-    testing.data_no_param(
-      source: "
-        <> root
-          <>
-            'see handleBob##<<[Bobbba|still-value]|rest'
-        ",
-      expected: "
-        <> root
-          handle=handleBob [Bobbba|still-value]
-          <>
-            'see [Bobbba|still-value]|rest'
-        ",
+              'code value'
+      ",
     ),
   ]
 }

@@ -1,21 +1,29 @@
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/regexp.{type Regexp}
 import gleam/string.{inspect as ins}
 import on
-import vxml.{type VXML, Attr, T, V}
+import vxml.{type Attr, type VXML, Attr, T, V}
 import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError, DesugaringError,
 }
+import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
-fn inner_param_to_transform(_: InnerParam) -> DesugarerTransform {
-  let nodemap: n2t.OneToOneStatefulNodemap(Int) = nodemap
+fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
+  let nodemap: n2t.OneToOneStatefulNodemap(Int) = fn(vxml, state) {
+    nodemap(vxml, state, inner)
+  }
   n2t.one_to_one_stateful_nodemap_2_desugarer_transform(nodemap, 0)
 }
 
-fn nodemap(node: VXML, counter: Int) -> Result(#(VXML, Int), DesugaringError) {
+fn nodemap(
+  node: VXML,
+  counter: Int,
+  inner: InnerParam,
+) -> Result(#(VXML, Int), DesugaringError) {
   case node {
     T(_, _) -> Ok(#(node, counter))
 
@@ -38,28 +46,16 @@ fn nodemap(node: VXML, counter: Int) -> Result(#(VXML, Int), DesugaringError) {
           case attr.key == "handle" {
             False -> Ok(attr)
             True -> {
-              use #(handle_name, handle_value) <- on.ok(
-                case string.split_once(attr.val |> core.normalize_spaces, " ") {
-                  Ok(#(first, second)) -> {
-                    case
-                      string.contains(first, "|")
-                      || string.contains(second, "|")
-                    {
-                      True ->
-                        Error(DesugaringError(
-                          attr.blame,
-                          "handle value contains splitting charachter '|'",
-                        ))
-                      False -> Ok(#(first, second))
-                    }
-                  }
-                  Error(_) -> Ok(#(attr.val, ""))
-                },
-              )
+              use #(handle_name, handle_value) <- on.ok(parse_handle(
+                attr,
+                inner,
+              ))
               Ok(
                 Attr(
                   ..attr,
-                  val: handle_name <> "|" <> handle_value <> "|" <> id,
+                  val: handle_name
+                    <> " "
+                    <> handle_syntax.encode_value(handle_value),
                 ),
               )
             }
@@ -69,6 +65,23 @@ fn nodemap(node: VXML, counter: Int) -> Result(#(VXML, Int), DesugaringError) {
 
       Ok(#(V(..node, attrs: attrs), counter))
     }
+  }
+}
+
+fn parse_handle(
+  attr: Attr,
+  inner: InnerParam,
+) -> Result(#(String, String), DesugaringError) {
+  case regexp.scan(inner, attr.val) {
+    [regexp.Match(_, [Some(handle_name), handle_value]), ..] ->
+      Ok(#(handle_name, option.unwrap(handle_value, "")))
+    _ ->
+      Error(DesugaringError(
+        attr.blame,
+        "handle attr must have form <name> <<value>>; found: “"
+          <> attr.val
+          <> "”",
+      ))
   }
 }
 
@@ -86,7 +99,15 @@ fn ensure_has_id_attr(vxml: VXML, counter: Int) -> #(VXML, Int, String) {
 }
 
 type InnerParam =
-  Nil
+  Regexp
+
+fn param_to_inner_param() -> InnerParam {
+  let assert Ok(regexp) =
+    regexp.from_string(
+      "^(" <> handle_syntax.decorated_name_pattern <> ") <<(.*)>>$",
+    )
+  regexp
+}
 
 pub const name = "handles_add_ids"
 
@@ -103,21 +124,19 @@ pub const name = "handles_add_ids"
 /// 2. parses each 'handle' attr value in the
 ///    form
 /// ```
-/// handle=handle_name [handle_value]
+/// handle=handle_name <<handle_value>>
 /// ```
-///    where the handle_value string is an optional
-///    string separated from handle_name that may or
-///    may not be present, and replaces this key-value
-///    pair with
+///    and replaces this key-value pair with
 /// ```
-/// handle=handle_name|handle_value|id
+/// handle=handle_name <<handle_value>>
 /// ```
-///    while using the empty string for 'handle_value',
-///    if not present
+///    The id is stored only in the element's sibling
+///    `id=` attribute. The value envelope preserves
+///    boundary whitespace.
 pub fn constructor() -> Desugarer {
   authoring.no_param_desugarer(
     name: name,
-    transform: inner_param_to_transform(Nil),
+    transform: inner_param_to_transform(param_to_inner_param()),
   )
 }
 
@@ -126,7 +145,35 @@ pub fn constructor() -> Desugarer {
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
 
 fn assertive_tests_data() -> List(testing.AssertiveTestDataNoParam) {
-  []
+  [
+    testing.data_no_param(
+      source: "
+        <> root
+          <> Section
+            handle=section:name <<value | with trailing spaces  >>
+      ",
+      expected: "
+        <> root
+          <> Section
+            handle=section:name <<value | with trailing spaces  >>
+            id=_1_h.a.i_
+      ",
+    ),
+    testing.data_no_param(
+      source: "
+        <> root
+          <> Section
+            handle=section:name <<>>
+            id=existing-id
+      ",
+      expected: "
+        <> root
+          <> Section
+            handle=section:name <<>>
+            id=existing-id
+      ",
+    ),
+  ]
 }
 
 pub fn assertive_tests() {
