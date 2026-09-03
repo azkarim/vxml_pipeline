@@ -40,16 +40,14 @@ pub fn run_assertive_test(
   use <- on.true_false(name != desugarer.name, fn() {
     Error(NonMatchingDesugarerName(desugarer.name))
   })
-  use vxmls <- on.ok(
-    vxml.parse_string(tst.source, "tst.source", True)
+  use input <- on.ok(
+    vxml.string_to_vxml(tst.source, "tst.source")
     |> result.map_error(fn(e) { VXMLParseError(e) }),
   )
-  let assert [input] = vxmls
-  use vxmls <- on.ok(
-    vxml.parse_string(tst.expected, "tst.expect", True)
+  use expected <- on.ok(
+    vxml.string_to_vxml(tst.expected, "tst.expect")
     |> result.map_error(fn(e) { VXMLParseError(e) }),
   )
-  let assert [expected] = vxmls
   use #(output, _) <- on.ok(
     desugarer.transform(input)
     |> result.map_error(fn(e) { TestDesugaringError(e) }),

@@ -10,11 +10,10 @@ pub fn main() {
 }
 
 fn transform(source: String) {
-  let assert Ok([source]) =
-    vxml.parse_string(
+  let assert Ok(source) =
+    vxml.string_to_vxml(
       source,
       "writerly_handles_grand_wrapper_unwrap_test.vxml",
-      True,
     )
   let Desugarer(transform:, ..) = ds.writerly_handles_grand_wrapper_unwrap()
   transform(source)

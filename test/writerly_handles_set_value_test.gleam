@@ -7,11 +7,10 @@ pub fn main() {
 }
 
 fn source() {
-  let assert Ok([source]) =
-    vxml.parse_string(
+  let assert Ok(source) =
+    vxml.string_to_vxml(
       "<> root\n  <> Target\n    handle=invalid/name",
       "writerly_handles_set_value_test.vxml",
-      True,
     )
   source
 }

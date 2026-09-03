@@ -17,18 +17,13 @@ import vxml_pipeline/testing
 fn handle_elements(state: State) -> List(VXML) {
   state.handles
   |> dict.map_values(fn(key, value) {
-    let #(decorators, page, value, id, path, _) = value
-    let page = case page {
-      True -> "true"
-      False -> "false"
-    }
+    let #(decorators, value, id, path, _) = value
     V(
       desugarer_blame(26),
       "Handle",
       [
         Attr(desugarer_blame(29), "name", key),
         Attr(desugarer_blame(30), "decorators", decorators),
-        Attr(desugarer_blame(31), "page", page),
         Attr(desugarer_blame(32), "value", handle_syntax.encode_value(value)),
         Attr(desugarer_blame(33), "id", id),
         Attr(desugarer_blame(34), "path", path),
@@ -42,7 +37,7 @@ fn handle_elements(state: State) -> List(VXML) {
 fn try_read_handle(
   attr: Attr,
   inner: InnerParam,
-) -> Result(#(String, String, Bool, String), DesugaringError) {
+) -> Result(#(String, String, String), DesugaringError) {
   assert attr.key == "handle"
   case regexp.scan(inner.handle_regexp, attr.val) {
     [Match(_, [Some(name)]), ..] -> Ok(handle_parts(name, ""))
@@ -58,26 +53,18 @@ fn try_read_handle(
   }
 }
 
-fn handle_parts(
-  name: String,
-  value: String,
-) -> #(String, String, Bool, String) {
+fn handle_parts(name: String, value: String) -> #(String, String, String) {
   let #(name, decorators) = case string.split_once(name, "#") {
     Ok(#(name, decorators)) -> #(name, "#" <> decorators)
     Error(_) -> #(name, "")
   }
-  let page =
-    decorators
-    |> string.split("#")
-    |> list.contains("page")
-  #(name, decorators, page, value)
+  #(name, decorators, value)
 }
 
 fn try_insert_handle(
   handles: HandlesDict,
   name: String,
   decorators: String,
-  page: Bool,
   value: String,
   id: String,
   path: String,
@@ -90,13 +77,11 @@ fn try_insert_handle(
         "redefinition of '"
           <> name
           <> "' (previously defined at "
-          <> bl.blame_digest(entry.5)
+          <> bl.blame_digest(entry.4)
           <> ")",
       ))
     Error(_) ->
-      Ok(
-        dict.insert(handles, name, #(decorators, page, value, id, path, blame)),
-      )
+      Ok(dict.insert(handles, name, #(decorators, value, id, path, blame)))
   }
 }
 
@@ -114,15 +99,11 @@ fn attrs_fold(
 
   case first.key {
     "handle" -> {
-      use #(name, decorators, page, value) <- on.ok(try_read_handle(
-        first,
-        inner,
-      ))
+      use #(name, decorators, value) <- on.ok(try_read_handle(first, inner))
       use handles <- on.ok(try_insert_handle(
         handles,
         name,
         decorators,
-        page,
         value,
         id,
         path,
@@ -252,8 +233,6 @@ type HandlesDict =
     #(
       // Decorators copied from the definition token.
       String,
-      // Whether the handle links to `#page` by default.
-      Bool,
       // String value of the handle.
       String,
       // Handle id on the page.
@@ -295,8 +274,8 @@ fn desugarer_blame(line_no: Int) {
 ///
 /// Wraps the root in `GrandWrapper` and moves handle definitions
 /// into structured `Handle` children carrying `name`, `decorators`,
-/// `page`, `value`, `id`, and `path` attributes. Decorators are
-/// preserved without interpretation except for deriving `page`.
+/// `value`, `id`, and `path` attributes. Decorators are preserved
+/// without interpretation.
 ///
 /// Leaves `id` attrs in place and does not add `id` attrs to `GrandWrapper`.
 pub fn constructor(param: Param) -> Desugarer {
@@ -333,7 +312,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
           <> Handle
             name=super-name
             decorators=
-            page=false
             value=<<AA| with spaces  >>
             id=_23-super-id
             path=./ch1.html
@@ -367,7 +345,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
           <> Handle
             name=other-name
             decorators=#page
-            page=true
             value=<<BB>>
             id=_24-other-id
             path=./ch2.html
@@ -396,7 +373,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
           <> Handle
             name=bare-name
             decorators=#page
-            page=true
             value=<<>>
             id=_25-bare-id
             path=./ch3.html

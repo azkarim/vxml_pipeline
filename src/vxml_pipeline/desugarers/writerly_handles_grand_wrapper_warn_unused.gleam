@@ -214,7 +214,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=eq:unused
-            page=false
             value=<<(1.1)>>
             id=_1_h.a.i_
             path=./ch1.html
@@ -231,7 +230,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=eq:unused
-            page=false
             value=<<(1.1)>>
             id=_1_h.a.i_
             path=./ch1.html
@@ -253,7 +251,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=eq:used
-            page=false
             value=<<(1.1)>>
             id=_1_h.a.i_
             path=./ch1.html
@@ -270,7 +267,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=eq:used
-            page=false
             value=<<(1.1)>>
             id=_1_h.a.i_
             path=./ch1.html
@@ -292,7 +288,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=sec:intro
-            page=false
             value=<<1.1>>
             id=_1_h.a.i_
             path=./ch1.html
@@ -309,7 +304,6 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=sec:intro
-            page=false
             value=<<1.1>>
             id=_1_h.a.i_
             path=./ch1.html

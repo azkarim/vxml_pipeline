@@ -64,4 +64,27 @@ pub fn main() {
       False,
     )
     == ["<> A", "<> C"]
+
+  let relative_window_source =
+    ["A", "B", "C", "D", "E", "F", "G", "H"]
+    |> list.map(fn(tag) {
+      tracking.VSLine(
+        blame.no_blame,
+        0,
+        "<> " <> tag,
+        tracking.NotSelected,
+        tag,
+      )
+    })
+  let select_a =
+    tracking.line_selector_to_selector(fn(line) {
+      case line {
+        tracking.VSLine(tag: "A", ..) -> tracking.OG
+        _ -> tracking.NotSelected
+      }
+    })
+  assert relative_window_source
+    |> tracking.select_relative_window(select_a, 5, 30)()
+    |> tracking.s_lines_verbatim_lines_with_options(False, False)
+    == ["<> F", "<> G", "<> H"]
 }

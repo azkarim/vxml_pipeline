@@ -9,15 +9,14 @@ pub fn main() {
 }
 
 fn rejects_unwrapped_handle_value() {
-  let assert Ok([source]) =
-    vxml.parse_string(
+  let assert Ok(source) =
+    vxml.string_to_vxml(
       "<> root
   path=./chapter.html
   <> Section
     handle=section:name unwrapped value
     id=section-id",
       "writerly_handles_grand_wrapper_generate_dictionary_test.vxml",
-      True,
     )
   let Desugarer(transform:, ..) =
     ds.writerly_handles_grand_wrapper_generate_dictionary("path")
@@ -29,15 +28,14 @@ fn rejects_unwrapped_handle_value() {
 }
 
 fn rejects_invalid_handle_name() {
-  let assert Ok([source]) =
-    vxml.parse_string(
+  let assert Ok(source) =
+    vxml.string_to_vxml(
       "<> root
   path=./chapter.html
   <> Section
     handle=invalid/name <<value>>
     id=section-id",
       "writerly_handles_grand_wrapper_generate_dictionary_test.vxml",
-      True,
     )
   let Desugarer(transform:, ..) =
     ds.writerly_handles_grand_wrapper_generate_dictionary("path")

@@ -18,6 +18,12 @@ import vxml_pipeline/handle_syntax
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
+fn has_decorator(decorators: String, expected: String) -> Bool {
+  decorators
+  |> string.split("#")
+  |> list.contains(expected)
+}
+
 fn extract_handle_and_page_and_decoy(
   match: Match,
 ) -> #(String, Bool, Option(String)) {
@@ -80,13 +86,14 @@ fn handle_text_parts(
 }
 
 fn hyperlink_constructor(
-  handle: #(Bool, String, String, String),
+  handle: #(String, String, String, String),
   page: Bool,
   blame: Blame,
   state: State,
   inner: InnerParam,
 ) -> Result(VXML, DesugaringError) {
-  let #(page_by_default, value, id, target_path) = handle
+  let #(decorators, value, id, target_path) = handle
+  let page_by_default = has_decorator(decorators, "page")
 
   use _ <- on.stay(case state.inside_a_link_tag {
     False -> on.Stay(Nil)
@@ -140,7 +147,7 @@ fn hyperlink_maybe(
   use warning_span_or_decoy_link <- on.ok(case decoy {
     None -> Ok(warning_element(handle_name, blame))
     Some(decoy) -> {
-      let quad = #(False, decoy, "decoy-id", "decoy-target-path")
+      let quad = #("", decoy, "decoy-id", "decoy-target-path")
       hyperlink_constructor(quad, page, blame, state, inner)
     }
   })
@@ -173,7 +180,8 @@ fn substitution_text(
     }
   }
   case dict.get(state.handles, handle_name) {
-    Ok(#(page_by_default, value, id, target_path)) -> {
+    Ok(#(decorators, value, id, target_path)) -> {
+      let page_by_default = has_decorator(decorators, "page")
       let target = case page || page_by_default {
         True -> target_path
         False -> target_path <> "#" <> id
@@ -342,34 +350,27 @@ fn insert_handle_element(
   inner: InnerParam,
 ) -> Result(HandlesDict, DesugaringError) {
   let name = core.v_first_attr_with_key(child, "name")
-  let page = core.v_first_attr_with_key(child, "page")
+  let decorators = core.v_first_attr_with_key(child, "decorators")
   let value = core.v_first_attr_with_key(child, "value")
   let id = core.v_first_attr_with_key(child, "id")
   let path = core.v_first_attr_with_key(child, "path")
-  use #(name, page, value, id, path) <- on.ok(case name, page, value, id, path {
-    Some(name), Some(page), Some(value), Some(id), Some(path) ->
-      Ok(#(name, page, value, id, path))
-    _, _, _, _, _ ->
-      Error(malformed_handle_element(
-        child,
-        "expected name, page, value, id, and path attributes",
-      ))
-  })
+  use #(name, decorators, value, id, path) <- on.ok(
+    case name, decorators, value, id, path {
+      Some(name), Some(decorators), Some(value), Some(id), Some(path) ->
+        Ok(#(name, decorators, value, id, path))
+      _, _, _, _, _ ->
+        Error(malformed_handle_element(
+          child,
+          "expected name, decorators, value, id, and path attributes",
+        ))
+    },
+  )
   use <- on.false_true(
     regexp.check(inner.dictionary_handle_name_regexp, name.val),
     fn() {
       Error(malformed_handle_element(child, "invalid name '" <> name.val <> "'"))
     },
   )
-  use page <- on.ok(case page.val {
-    "true" -> Ok(True)
-    "false" -> Ok(False)
-    value ->
-      Error(malformed_handle_element(
-        child,
-        "page must be 'true' or 'false'; found '" <> value <> "'",
-      ))
-  })
   use value <- on.ok(
     handle_syntax.decode_value(value.val)
     |> result.map_error(fn(_) {
@@ -379,7 +380,7 @@ fn insert_handle_element(
   use <- on.true_false(dict.has_key(handles, name.val), fn() {
     Error(malformed_handle_element(child, "duplicate name '" <> name.val <> "'"))
   })
-  Ok(dict.insert(handles, name.val, #(page, value, id.val, path.val)))
+  Ok(dict.insert(handles, name.val, #(decorators.val, value, id.val, path.val)))
 }
 
 fn grand_wrapper_load(
@@ -444,7 +445,8 @@ fn substitute_handle_in_href(
     False -> #(False, handle_name)
   }
   case dict.get(state.handles, handle_name) {
-    Ok(#(page_by_default, _, id, target_path)) -> {
+    Ok(#(decorators, _, id, target_path)) -> {
+      let page_by_default = has_decorator(decorators, "page")
       let href_type = case target_path == option.unwrap(state.path, "") {
         True -> InPage
         False -> OutOfPage
@@ -666,11 +668,9 @@ fn param_to_inner_param(param: Param) -> Result(InnerParam, DesugaringError) {
 }
 
 type HandlesDict =
-  Dict(String, #(Bool, String, String, String))
+  Dict(String, #(String, String, String, String))
 
-//                      handle    #page value   id      path
-//                                by
-//                                default
+//                      handle    decorators value   id      path
 
 type State {
   State(
@@ -731,7 +731,8 @@ fn desugarer_blame(line_no: Int) {
 }
 
 /// Expects a document with root 'GrandWrapper' containing structured
-/// `Handle` children with `name`, `page`, `value`, `id`, and `path` attrs.
+/// `Handle` children with `name`, `decorators`, `value`, `id`, and `path`
+/// attrs.
 ///
 /// Replaces in-text >>handle_name occurrences and href=>>handle_name attrs
 /// by links. The produced link tag and attrs depend on whether the handle's
@@ -800,7 +801,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=fluescence
-            page=false
+            decorators=
             value=<<AA>>
             id=_23-super-id
             path=./ch1.html
@@ -814,7 +815,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=fluescence
-            page=false
+            decorators=
             value=<<AA>>
             id=_23-super-id
             path=./ch1.html
@@ -848,7 +849,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
           id=section-1 ./ch1.html
           <> Handle
             name=section
-            page=false
+            decorators=
             value=<<Section 1>>
             id=section-1
             path=./ch1.html
@@ -869,7 +870,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
           id=section-1 ./ch1.html
           <> Handle
             name=section
-            page=false
+            decorators=
             value=<<Section 1>>
             id=section-1
             path=./ch1.html
@@ -903,13 +904,13 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=lonely
-            page=false
+            decorators=
             value=<<(1.1)>>
             id=eq-1
             path=./ch1.html
           <> Handle
             name=in-math-only
-            page=false
+            decorators=
             value=<<(1.2)>>
             id=eq-2
             path=./ch1.html
@@ -925,14 +926,14 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=lonely
-            page=false
+            decorators=
             value=<<(1.1)>>
             id=eq-1
             path=./ch1.html
             used=false
           <> Handle
             name=in-math-only
-            page=false
+            decorators=
             value=<<(1.2)>>
             id=eq-2
             path=./ch1.html
@@ -955,7 +956,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -970,7 +971,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -990,7 +991,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1005,7 +1006,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1025,7 +1026,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1040,7 +1041,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1060,7 +1061,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=other
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1075,7 +1076,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=other
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1095,7 +1096,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=other
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1110,7 +1111,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=other
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1130,7 +1131,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1144,7 +1145,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1170,7 +1171,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1184,7 +1185,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1205,7 +1206,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1219,7 +1220,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1245,7 +1246,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1260,7 +1261,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1281,7 +1282,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1295,7 +1296,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=some_handle
-            page=false
+            decorators=
             value=<<2>>
             id=eq-id
             path=./ch1.html
@@ -1315,7 +1316,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=δοκιμή_2
-            page=false
+            decorators=
             value=<<value>>
             id=id
             path=./ch1.html
@@ -1329,7 +1330,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=δοκιμή_2
-            page=false
+            decorators=
             value=<<value>>
             id=id
             path=./ch1.html
@@ -1351,7 +1352,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=code_handle
-            page=false
+            decorators=
             value=<<code value>>
             id=code-id
             path=./chapter.html
@@ -1364,7 +1365,7 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
         <> GrandWrapper
           <> Handle
             name=code_handle
-            page=false
+            decorators=
             value=<<code value>>
             id=code-id
             path=./chapter.html

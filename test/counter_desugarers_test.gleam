@@ -9,8 +9,8 @@ pub fn main() {
 }
 
 fn source(source: String) -> vxml.VXML {
-  let assert Ok([vxml]) =
-    vxml.parse_string(source, "counter_desugarers_test.vxml", True)
+  let assert Ok(vxml) =
+    vxml.string_to_vxml(source, "counter_desugarers_test.vxml")
   vxml
 }
 

@@ -392,7 +392,7 @@ implemented as monitors. Applications can install VXML validation directly:
 
 ```gleam
 vp.vxml_validation_monitor(
-  False, // do not warn about leading whitespace in attribute values
+  False, // do not mention leading whitespace in attribute values
 )
 ```
 
@@ -404,7 +404,8 @@ whitespace remains valid VXML; trailing spaces and tabs are invalid.
 with no lines. It does not validate tags, attributes, or individual line
 contents. The corresponding command-line form is
 `--validate-vxml -lines-only`. It cannot be combined with
-`-warn-attribute-whitespace`.
+`-mention-leading-val-whitespace` or its alias
+`-mention-val-leading-whitespace`.
 
 ## Renderer parameters and options
 

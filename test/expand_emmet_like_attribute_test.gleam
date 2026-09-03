@@ -10,8 +10,8 @@ pub fn main() {
 }
 
 fn source() {
-  let assert Ok([source]) =
-    vxml.parse_string("<> root", "expand_emmet_like_attribute_test.vxml", True)
+  let assert Ok(source) =
+    vxml.string_to_vxml("<> root", "expand_emmet_like_attribute_test.vxml")
   source
 }
 

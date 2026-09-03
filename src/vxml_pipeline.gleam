@@ -99,12 +99,12 @@ pub opaque type Monitor {
 /// relative step selections can be validated before execution.
 pub opaque type MonitorFactory {
   TrackingMonitorFactory(Tracker)
-  DumpMonitorFactory(List(PipelineStepSpec), VxmlMonitorOutput)
+  DumpMonitorFactory(List(PipelineStepSpec), VxmlDumpOutput)
   VxmlValidationMonitorFactory(VxmlValidationMode)
 }
 
 type VxmlValidationMode {
-  ValidateAllVxml(warn_about_leading_attribute_whitespace: Bool)
+  ValidateAllVxml(mention_leading_val_whitespace: Bool)
   ValidateTextLinesOnly
 }
 
@@ -151,9 +151,12 @@ pub type Parser(parser_error) =
 pub fn default_xml_parser(
   lines: List(InputLine),
 ) -> Result(#(VXML, Feedback), #(Blame, String)) {
-  vp.parse_xml_input_lines(lines)
+  vp.xml_input_lines_to_vxml(lines)
   |> result.map(fn(vxml) { #(vxml, NoFeedback) })
-  |> result.map_error(fn(e) { #(bl.no_blame, "xml parse error: " <> ins(e)) })
+  |> result.map_error(fn(error) {
+    let vp.XMLParseError(blame, message) = error
+    #(blame, "xml parse error: " <> message)
+  })
 }
 
 /// Alias of `default_xml_parser` for HTML-oriented renderer configurations.
@@ -570,9 +573,11 @@ pub type RendererOptions(fragment_classifier) {
     dump_filtered_vxml: Bool,
     dump_splitter_fragments: fn(OutputFragment(fragment_classifier, VXML)) ->
       Bool,
+    dump_splitter_output: VxmlDumpOutput,
     dump_emitter_fragments: fn(
       OutputFragment(fragment_classifier, List(OutputLine)),
     ) -> Bool,
+    dump_emitter_output: VxmlDumpOutput,
   )
 }
 
@@ -602,11 +607,13 @@ pub fn vanilla_options() -> RendererOptions(fragment_classifier) {
     dump_parsed_vxml: False,
     dump_filtered_vxml: False,
     dump_splitter_fragments: fn(_) { False },
+    dump_splitter_output: VxmlTable(None, None),
     dump_emitter_fragments: fn(
       _: OutputFragment(fragment_classifier, List(OutputLine)),
     ) {
       False
     },
+    dump_emitter_output: VxmlTable(None, None),
   )
 }
 
@@ -616,14 +623,15 @@ type Tracker {
     change_selector: Option(tracking.Selector),
     step_specs: List(PipelineStepSpec),
     monitor_interactive_mode: Bool,
-    output: Option(VxmlMonitorOutput),
+    output: Option(VxmlDumpOutput),
     include_selection_ellipses: Option(Bool),
   )
 }
 
-type VxmlMonitorOutput {
-  TrackingTable(blame_columns: Option(Int), comment_columns: Option(Int))
-  TrackingVerbatim
+/// Controls presentation of VXML emitted by a diagnostic dump.
+pub type VxmlDumpOutput {
+  VxmlTable(blame_columns: Option(Int), comment_columns: Option(Int))
+  VxmlVerbatim
 }
 
 /// Parsed standard VXML Pipeline options and uninterpreted application options.
@@ -659,7 +667,9 @@ pub type ParsedCLIArguments {
     dump_parsed: Bool,
     dump_filtered: Bool,
     splitter_fragment_path_matches: Option(List(String)),
+    splitter_fragment_output: Option(VxmlDumpOutput),
     emitter_fragment_path_matches: Option(List(String)),
+    emitter_fragment_output: Option(VxmlDumpOutput),
     user_args: Dict(String, List(String)),
   )
 }
@@ -715,7 +725,9 @@ fn empty_parsed_cli_arguments() -> ParsedCLIArguments {
     dump_parsed: False,
     dump_filtered: False,
     splitter_fragment_path_matches: None,
+    splitter_fragment_output: None,
     emitter_fragment_path_matches: None,
+    emitter_fragment_output: None,
     user_args: dict.from_list([]),
   )
 }
@@ -807,16 +819,19 @@ pub fn track_cli_usage(header: String) {
     "     gleam run -- --track \"<> ImageRight\"",
     "",
     "  selector windows",
-    "     A signed window selects lines before and after each match.",
-    "     Write +<after>-<before>, or put the minus part first:",
+    "     A signed window selects an inclusive range relative to",
+    "     each match. Give one signed endpoint, or two signed",
+    "     endpoints:",
     "",
-    "       +5-2   five lines after and two before",
-    "       -2+5   equivalent to +5-2",
+    "       +5     the match through five lines after",
+    "       -2     two lines before through the match",
+    "       +5-2   two lines before through five lines after",
+    "       +5+30  lines five through thirty after the match",
+    "       -30-5  lines thirty through five before the match",
     "       +-5    five lines on either side",
     "       -+5    equivalent to +-5",
     "       +0     only the matching line",
     "",
-    "     A nonzero one-sided form such as '+5' or '-5' is rejected.",
     "     With no window, tracking and printing both use '-+1'.",
     "",
     "  tracking versus printing",
@@ -936,9 +951,9 @@ pub fn advanced_cli_usage(header: String) {
     "--warnings/--no-warnings",
     "  -> force/suppress long-form printout of warnings",
     "",
-    "--validate-vxml [-warn-attribute-whitespace | -lines-only]",
+    "--validate-vxml [-mention-leading-val-whitespace | -lines-only]",
     "  -> validate VXML before and after every pipeline step; optionally",
-    "     warn about leading attribute whitespace, or only reject empty",
+    "     mention leading attribute whitespace, or only reject empty",
     "     text nodes",
     "",
     "--dump-assembled",
@@ -950,11 +965,11 @@ pub fn advanced_cli_usage(header: String) {
     "--dump-filtered",
     "  -> print the parsed VXML filtered for key-value pairs",
     "",
-    "--dump-splitter [<path-match1> <path-match2> ...]",
+    "--dump-splitter [<path-match1> ...] [-verbatim] [-cc<n>] [-bc<n>]",
     "  -> dump fragments whose paths contain one of the given subpaths",
     "     produced by the splitter; list none to match all",
     "",
-    "--dump-emitter [<path-match1> <path-match2> ...]",
+    "--dump-emitter [<path-match1> ...] [-verbatim] [-cc<n>] [-bc<n>]",
     "  -> dump fragments whose paths contain one of the given subpaths",
     "     produced by the emitter; list none to match all",
     "",
@@ -1454,15 +1469,19 @@ fn process_command_line_arguments_(
             None -> Ok(Nil)
             Some(_) -> Error(DuplicateOption(option))
           })
+          let mention_leading_val_whitespace =
+            list.contains(values, "-mention-leading-val-whitespace")
+            || list.contains(values, "-mention-val-leading-whitespace")
           let conflicting =
-            list.contains(values, "-warn-attribute-whitespace")
+            mention_leading_val_whitespace
             && list.contains(values, "-lines-only")
           use mode <- on.ok(case conflicting {
             True -> Error(ConflictingOptionArguments("--validate-vxml"))
             False ->
               case values {
                 [] -> Ok(ValidateAllVxml(False))
-                ["-warn-attribute-whitespace"] -> Ok(ValidateAllVxml(True))
+                ["-mention-leading-val-whitespace"] -> Ok(ValidateAllVxml(True))
+                ["-mention-val-leading-whitespace"] -> Ok(ValidateAllVxml(True))
                 ["-lines-only"] -> Ok(ValidateTextLinesOnly)
                 _ -> Error(UnexpectedArgumentsToOption("--validate-vxml"))
               }
@@ -1495,27 +1514,47 @@ fn process_command_line_arguments_(
             False -> Error(UnexpectedArgumentsToOption(option))
           }
 
-        "--dump-splitter" ->
+        "--dump-splitter" -> {
+          use #(output, path_matches) <- on.ok(
+            parse_vxml_monitor_output_arguments(values),
+          )
+          use output <- on.ok(combine_optional_vxml_dump_outputs(
+            arguments.splitter_fragment_output,
+            output,
+            option,
+          ))
           Ok(
             ParsedCLIArguments(
               ..arguments,
               splitter_fragment_path_matches: combine_fragment_path_matches(
                 arguments.splitter_fragment_path_matches,
-                values,
+                path_matches,
               ),
+              splitter_fragment_output: Some(output),
             ),
           )
+        }
 
-        "--dump-emitter" ->
+        "--dump-emitter" -> {
+          use #(output, path_matches) <- on.ok(
+            parse_vxml_monitor_output_arguments(values),
+          )
+          use output <- on.ok(combine_optional_vxml_dump_outputs(
+            arguments.emitter_fragment_output,
+            output,
+            option,
+          ))
           Ok(
             ParsedCLIArguments(
               ..arguments,
               emitter_fragment_path_matches: combine_fragment_path_matches(
                 arguments.emitter_fragment_path_matches,
-                values,
+                path_matches,
               ),
+              emitter_fragment_output: Some(output),
             ),
           )
+        }
 
         "--succinct" ->
           case list.is_empty(values) {
@@ -1673,7 +1712,7 @@ fn parse_attr_value_args_in_filename(
 // --track, --track-steps, and --dump parsing
 
 type SelectorLineWindow {
-  SelectorLineWindow(lines_after: Int, lines_before: Int)
+  SelectorLineWindow(first_offset: Int, last_offset: Int)
 }
 
 type AbsoluteStepRange {
@@ -1710,53 +1749,42 @@ fn parse_selector_line_window(s: String) -> Result(SelectorLineWindow, Nil) {
   case string.starts_with(s, "+-"), string.starts_with(s, "-+") {
     True, _ ->
       int.parse(string.drop_start(s, 2))
-      |> result.map(fn(size) { SelectorLineWindow(size, size) })
+      |> result.map(fn(size) { SelectorLineWindow(-size, size) })
     _, True ->
       int.parse(string.drop_start(s, 2))
-      |> result.map(fn(size) { SelectorLineWindow(size, size) })
-    _, _ -> parse_asymmetric_selector_line_window(s)
+      |> result.map(fn(size) { SelectorLineWindow(-size, size) })
+    _, _ -> parse_signed_selector_line_window(s)
   }
 }
 
-fn parse_asymmetric_selector_line_window(
+fn parse_signed_selector_line_window(
   s: String,
 ) -> Result(SelectorLineWindow, Nil) {
-  case string.starts_with(s, "+"), string.starts_with(s, "-") {
-    True, _ -> {
-      let s = string.drop_start(s, 1)
-      case string.split_once(s, "-") {
-        Ok(#(before, after)) -> {
-          case int.parse(before), int.parse(after) {
-            Ok(p), Ok(m) -> Ok(SelectorLineWindow(p, m))
-            _, _ -> Error(Nil)
-          }
-        }
-        _ ->
-          case int.parse(s) {
-            Ok(0) -> Ok(SelectorLineWindow(0, 0))
-            _ -> Error(Nil)
-          }
+  use #(first_sign, body) <- result.try(case string.pop_grapheme(s) {
+    Ok(#(sign, body)) if sign == "+" || sign == "-" -> Ok(#(sign, body))
+    _ -> Error(Nil)
+  })
+  let #(first_digits, second_string) = case string.split_once(body, "+") {
+    Ok(#(first, second)) -> #(first, Some("+" <> second))
+    Error(_) ->
+      case string.split_once(body, "-") {
+        Ok(#(first, second)) -> #(first, Some("-" <> second))
+        Error(_) -> #(body, None)
       }
-    }
+  }
+  use first <- result.try(parse_selector_line_offset(first_sign <> first_digits))
+  use second <- result.try(case second_string {
+    Some(second) -> parse_selector_line_offset(second)
+    None -> Ok(0)
+  })
+  Ok(SelectorLineWindow(int.min(first, second), int.max(first, second)))
+}
 
-    _, True -> {
-      let s = string.drop_start(s, 1)
-      case string.split_once(s, "+") {
-        Ok(#(before, after)) -> {
-          case int.parse(before), int.parse(after) {
-            Ok(m), Ok(p) -> Ok(SelectorLineWindow(p, m))
-            _, _ -> Error(Nil)
-          }
-        }
-        _ ->
-          case int.parse(s) {
-            Ok(0) -> Ok(SelectorLineWindow(0, 0))
-            _ -> Error(Nil)
-          }
-      }
-    }
-
-    _, _ -> Error(Nil)
+fn parse_selector_line_offset(s: String) -> Result(Int, Nil) {
+  use value <- result.try(int.parse(string.drop_start(s, 1)))
+  case string.starts_with(s, "-") {
+    True -> Ok(-value)
+    False -> Ok(value)
   }
 }
 
@@ -1991,7 +2019,7 @@ fn parse_tracking_column_count(
 
 fn parse_vxml_monitor_output_arguments(
   values: List(String),
-) -> Result(#(VxmlMonitorOutput, List(String)), CommandLineError) {
+) -> Result(#(VxmlDumpOutput, List(String)), CommandLineError) {
   use parsed <- on.ok(
     list.try_fold(
       values,
@@ -2052,10 +2080,10 @@ fn parse_vxml_monitor_output_arguments(
   )
 
   case parsed.verbatim {
-    True -> Ok(#(TrackingVerbatim, parsed.remaining))
+    True -> Ok(#(VxmlVerbatim, parsed.remaining))
     False ->
       Ok(#(
-        TrackingTable(parsed.blame_columns, parsed.comment_columns),
+        VxmlTable(parsed.blame_columns, parsed.comment_columns),
         parsed.remaining,
       ))
   }
@@ -2136,7 +2164,7 @@ fn normalize_selector_definitions(
     }),
   )
   use assigned <- on.ok(assign_selector_targets(anchors))
-  let default_window = SelectorLineWindow(1, 1)
+  let default_window = SelectorLineWindow(-1, 1)
   case assigned {
     [] -> {
       let track = SelectorDefinition(TrackSelector, default_window, values)
@@ -2270,8 +2298,10 @@ fn selector_from_definition(
     with_ancestors || with_elder_siblings || with_ancestor_attrs
   let selector =
     base_selector
-    |> tracking.extend_selector_up(definition.window.lines_before)
-    |> tracking.extend_selector_down(definition.window.lines_after)
+    |> tracking.select_relative_window(
+      definition.window.first_offset,
+      definition.window.last_offset,
+    )
   case with_ancestors {
     False -> Ok(selector)
     True ->
@@ -2374,10 +2404,7 @@ fn join_tracking_monitor_factory(
 
 fn parse_dump_args(
   values: List(String),
-) -> Result(
-  #(List(PipelineStepSpec), VxmlMonitorOutput, Bool),
-  CommandLineError,
-) {
+) -> Result(#(List(PipelineStepSpec), VxmlDumpOutput, Bool), CommandLineError) {
   let #(monitor_interactive_mode, values) = core.delete(values, "-i")
   use #(output, values) <- on.ok(parse_vxml_monitor_output_arguments(values))
   use specs <- on.ok(parse_pipeline_step_specs(values))
@@ -2398,13 +2425,13 @@ fn combine_optional_dump_column_counts(
 }
 
 fn combine_vxml_monitor_outputs(
-  first: VxmlMonitorOutput,
-  second: VxmlMonitorOutput,
-) -> Result(VxmlMonitorOutput, CommandLineError) {
+  first: VxmlDumpOutput,
+  second: VxmlDumpOutput,
+) -> Result(VxmlDumpOutput, CommandLineError) {
   case first, second {
-    TrackingVerbatim, TrackingVerbatim -> Ok(TrackingVerbatim)
-    TrackingTable(first_blame, first_comment),
-      TrackingTable(second_blame, second_comment)
+    VxmlVerbatim, VxmlVerbatim -> Ok(VxmlVerbatim)
+    VxmlTable(first_blame, first_comment),
+      VxmlTable(second_blame, second_comment)
     -> {
       use blame <- on.ok(combine_optional_dump_column_counts(
         first_blame,
@@ -2414,9 +2441,22 @@ fn combine_vxml_monitor_outputs(
         first_comment,
         second_comment,
       ))
-      Ok(TrackingTable(blame, comment))
+      Ok(VxmlTable(blame, comment))
     }
     _, _ -> Error(ConflictingOptionArguments("--dump"))
+  }
+}
+
+fn combine_optional_vxml_dump_outputs(
+  existing: Option(VxmlDumpOutput),
+  additional: VxmlDumpOutput,
+  option_name: String,
+) -> Result(VxmlDumpOutput, CommandLineError) {
+  case existing {
+    None -> Ok(additional)
+    Some(existing) ->
+      combine_vxml_monitor_outputs(existing, additional)
+      |> result.map_error(fn(_) { ConflictingOptionArguments(option_name) })
   }
 }
 
@@ -2612,6 +2652,10 @@ pub fn amend_renderer_options_by_arguments(
         _,
       ))
     },
+    dump_splitter_output: option.unwrap(
+      arguments.splitter_fragment_output,
+      options.dump_splitter_output,
+    ),
     dump_emitter_fragments: fn(
       fr: OutputFragment(fragment_classifier, List(OutputLine)),
     ) {
@@ -2621,6 +2665,10 @@ pub fn amend_renderer_options_by_arguments(
         _,
       ))
     },
+    dump_emitter_output: option.unwrap(
+      arguments.emitter_fragment_output,
+      options.dump_emitter_output,
+    ),
   )
 }
 
@@ -2634,14 +2682,13 @@ fn resolve_absolute_step(step: Int, pipeline: Pipeline) -> Int {
 
 // Monitor construction and pipeline-step resolution
 
-fn vxml_validation_problem_message(
-  problem: vp.VXMLSerializationProblem,
-) -> String {
+fn vxml_validation_problem_message(problem: vp.VXMLInvalidityReason) -> String {
   case problem {
-    vp.BadTag(problem) -> "invalid tag: " <> ins(problem)
-    vp.BadAttributeKey(problem) -> "invalid attribute key: " <> ins(problem)
-    vp.BadAttributeValue(problem) -> "invalid attribute value: " <> ins(problem)
-    vp.BadText(problem) -> "invalid text node: " <> ins(problem)
+    vp.TagIsBad(problem) -> "invalid tag: " <> ins(problem)
+    vp.AttributeKeyIsBad(problem) -> "invalid attribute key: " <> ins(problem)
+    vp.AttributeValueIsBad(problem) ->
+      "invalid attribute value: " <> ins(problem)
+    vp.LinesAreBad(problem) -> "invalid text node: " <> ins(problem)
   }
 }
 
@@ -2652,11 +2699,11 @@ fn blame_location_suffix(blame: Blame) -> String {
   }
 }
 
-fn leading_attribute_whitespace_warnings(vxml: VXML) -> List(String) {
+fn leading_attribute_whitespace_mentions(vxml: VXML) -> List(String) {
   case vxml {
     T(..) -> []
     V(_, _, attrs, children) -> {
-      let local_warnings =
+      let local_mentions =
         attrs
         |> list.filter(fn(attr) { string.trim_start(attr.val) != attr.val })
         |> list.map(fn(attr) {
@@ -2666,8 +2713,8 @@ fn leading_attribute_whitespace_warnings(vxml: VXML) -> List(String) {
           <> blame_location_suffix(attr.blame)
         })
       list.append(
-        local_warnings,
-        children |> list.flat_map(leading_attribute_whitespace_warnings),
+        local_mentions,
+        children |> list.flat_map(leading_attribute_whitespace_mentions),
       )
     }
   }
@@ -2676,43 +2723,43 @@ fn leading_attribute_whitespace_warnings(vxml: VXML) -> List(String) {
 /// Builds a monitor that validates VXML before and after every pipeline step.
 ///
 /// Invalid VXML stops the pipeline. When
-/// `warn_about_leading_attribute_whitespace` is `True`, the monitor also emits
+/// `mention_leading_val_whitespace` is `True`, the monitor also emits
 /// feedback for attribute values with leading whitespace. Leading whitespace
 /// is valid VXML and is not otherwise rejected.
 pub fn vxml_validation_monitor(
-  warn_about_leading_attribute_whitespace: Bool,
+  mention_leading_val_whitespace: Bool,
 ) -> Monitor {
-  new_monitor("validate-vxml", [], fn(vxml, previous_warnings, _) {
+  new_monitor("validate-vxml", [], fn(vxml, previous_mentions, _) {
     use _ <- on.error_ok(vp.validate(vxml), fn(error) {
       let vp.VXMLValidationError(blame, problem) = error
       Error(
         vxml_validation_problem_message(problem) <> blame_location_suffix(blame),
       )
     })
-    let warnings = case warn_about_leading_attribute_whitespace {
+    let mentions = case mention_leading_val_whitespace {
       False -> []
       True ->
         vxml
-        |> leading_attribute_whitespace_warnings
+        |> leading_attribute_whitespace_mentions
         |> list.unique
     }
-    let new_warnings =
-      warnings
-      |> list.filter(fn(warning) { !list.contains(previous_warnings, warning) })
-    let feedback = case new_warnings {
+    let new_mentions =
+      mentions
+      |> list.filter(fn(mention) { !list.contains(previous_mentions, mention) })
+    let feedback = case new_mentions {
       [] -> NoFeedback
-      warnings ->
+      mentions ->
         SomeFeedback([
           FeedbackBlock(
             lines: [
-              "⚠️ VXML attribute-whitespace warning:",
-              ..list.map(warnings, fn(warning) { "- " <> warning })
+              "VXML attribute-whitespace mention:",
+              ..list.map(mentions, fn(mention) { "- " <> mention })
             ],
             margin: AtRunnerMargin,
           ),
         ])
     }
-    Ok(#(warnings, feedback))
+    Ok(#(mentions, feedback))
   })
 }
 
@@ -2847,7 +2894,7 @@ fn selected_vxml(vxml: VXML, selector: Selector) {
 fn selected_output_lines(
   vxml: VXML,
   selector: Selector,
-  output: VxmlMonitorOutput,
+  output: VxmlDumpOutput,
   include_ellipses: Bool,
   table_indent: Int,
   default_blame_columns: Int,
@@ -2855,13 +2902,13 @@ fn selected_output_lines(
 ) -> List(String) {
   let lines = selected_vxml(vxml, selector)
   case output {
-    TrackingVerbatim ->
+    VxmlVerbatim ->
       tracking.s_lines_verbatim_lines_with_options(
         lines,
         False,
         include_ellipses,
       )
-    TrackingTable(blame_columns, comment_columns) -> {
+    VxmlTable(blame_columns, comment_columns) -> {
       let blame_columns = option.unwrap(blame_columns, default_blame_columns)
       let comment_columns =
         option.unwrap(comment_columns, default_comment_columns)
@@ -2883,10 +2930,10 @@ fn selected_comparison_string(vxml: VXML, selector: Selector) -> String {
   |> tracking.s_lines_table("", True, 0)
 }
 
-fn vxml_monitor_output_margin(output: VxmlMonitorOutput) -> FeedbackMargin {
+fn vxml_monitor_output_margin(output: VxmlDumpOutput) -> FeedbackMargin {
   case output {
-    TrackingTable(_, _) -> AtRunnerMargin
-    TrackingVerbatim -> Verbatim
+    VxmlTable(_, _) -> AtRunnerMargin
+    VxmlVerbatim -> Verbatim
   }
 }
 
@@ -2894,7 +2941,7 @@ fn tracking_monitor_output(
   vxml: VXML,
   selector: Selector,
   context: PipelineStepContext,
-  output: VxmlMonitorOutput,
+  output: VxmlDumpOutput,
   include_ellipses: Bool,
   default_blame_columns: Int,
   default_comment_columns: Int,
@@ -2933,7 +2980,7 @@ fn make_tracking_monitor(
     option.unwrap(tracker.printing_selector, fn(lines) { lines })
   let change_selector =
     option.unwrap(tracker.change_selector, printing_selector)
-  let output = option.unwrap(tracker.output, TrackingTable(None, None))
+  let output = option.unwrap(tracker.output, VxmlTable(None, None))
   let output_margin = vxml_monitor_output_margin(output)
   let include_selection_ellipses =
     option.unwrap(tracker.include_selection_ellipses, True)
@@ -2998,7 +3045,7 @@ fn make_tracking_monitor(
 
 fn make_dump_monitor(
   specs: List(PipelineStepSpec),
-  output: VxmlMonitorOutput,
+  output: VxmlDumpOutput,
   pipeline: Pipeline,
   default_blame_columns: Int,
   default_comment_columns: Int,
@@ -3073,10 +3120,8 @@ fn make_monitors(
           )
         VxmlValidationMonitorFactory(mode) ->
           case mode {
-            ValidateAllVxml(warn_about_leading_attribute_whitespace) ->
-              Ok(vxml_validation_monitor(
-                warn_about_leading_attribute_whitespace,
-              ))
+            ValidateAllVxml(mention_leading_val_whitespace) ->
+              Ok(vxml_validation_monitor(mention_leading_val_whitespace))
             ValidateTextLinesOnly -> Ok(empty_text_node_monitor())
           }
       }
@@ -3436,11 +3481,63 @@ fn sanitize_input_output_dirs(
   )
 }
 
-fn dump_vxml(vxml: VXML, banner: String, indent: Int) -> Nil {
+fn dump_output_lines(
+  lines: List(OutputLine),
+  banner: String,
+  output: VxmlDumpOutput,
+  default_blame_columns: Int,
+  default_comment_columns: Int,
+) -> Nil {
+  case output {
+    VxmlVerbatim -> {
+      io.println(banner)
+      lines
+      |> list.map(io_l.output_line_to_string)
+      |> string.join("\n")
+      |> io.println
+    }
+    VxmlTable(blame_columns, comment_columns) ->
+      lines
+      |> io_l.output_lines_table_with(
+        banner,
+        2,
+        bl.BlameTableMarginColumnsMinMax(
+          option.unwrap(blame_columns, default_blame_columns),
+          option.unwrap(blame_columns, default_blame_columns),
+        ),
+        bl.BlameTableMarginColumnsMinMax(
+          option.unwrap(comment_columns, default_comment_columns),
+          option.unwrap(comment_columns, default_comment_columns),
+        ),
+      )
+      |> io.println
+  }
+}
+
+fn dump_vxml(
+  vxml: VXML,
+  banner: String,
+  output: VxmlDumpOutput,
+  default_blame_columns: Int,
+  default_comment_columns: Int,
+) -> Nil {
   case vp.vxml_to_output_lines(vxml) {
-    Ok(lines) -> lines |> io_l.output_lines_table(banner, indent) |> io.println
+    Ok(lines) ->
+      dump_output_lines(
+        lines,
+        banner,
+        output,
+        default_blame_columns,
+        default_comment_columns,
+      )
     Error(error) -> {
-      error.partial |> io_l.output_lines_table(banner, indent) |> io.println
+      dump_output_lines(
+        error.partial,
+        banner,
+        output,
+        default_blame_columns,
+        default_comment_columns,
+      )
       io.println("VXML serialization error: " <> ins(error))
     }
   }
@@ -3624,7 +3721,14 @@ fn run_renderer_(
 
   case options.dump_parsed_vxml {
     False -> Nil
-    True -> dump_vxml(parsed, "parsed:", 2)
+    True ->
+      dump_vxml(
+        parsed,
+        "parsed:",
+        VxmlTable(None, None),
+        options.vxml_table_default_blame_columns,
+        options.vxml_table_default_comment_columns,
+      )
   }
 
   use #(filtered, filterer_feedback) <- on.error_ok(
@@ -3645,7 +3749,14 @@ fn run_renderer_(
 
   case options.dump_filtered_vxml {
     False -> Nil
-    True -> dump_vxml(filtered, "filtered:", 2)
+    True ->
+      dump_vxml(
+        filtered,
+        "filtered:",
+        VxmlTable(None, None),
+        options.vxml_table_default_blame_columns,
+        options.vxml_table_default_comment_columns,
+      )
   }
 
   // 🌸 pipeline 🌸
@@ -3816,7 +3927,14 @@ fn run_renderer_(
   |> list.each(fn(fr) {
     case options.dump_splitter_fragments(fr) {
       False -> Nil
-      True -> dump_vxml(fr.payload, "splitter: " <> fr.path, 2)
+      True ->
+        dump_vxml(
+          fr.payload,
+          "splitter: " <> fr.path,
+          options.dump_splitter_output,
+          options.vxml_table_default_blame_columns,
+          options.vxml_table_default_comment_columns,
+        )
     }
   })
 
@@ -3838,11 +3956,14 @@ fn run_renderer_(
         print_verbose_feedback(feedback, options.verbose)
         case options.dump_emitter_fragments(fr) {
           False -> Nil
-          True -> {
-            fr.payload
-            |> io_l.output_lines_table("emitter: " <> fr.path, 2)
-            |> io.println
-          }
+          True ->
+            dump_output_lines(
+              fr.payload,
+              "emitter: " <> fr.path,
+              options.dump_emitter_output,
+              options.vxml_table_default_blame_columns,
+              options.vxml_table_default_comment_columns,
+            )
         }
       }
     }

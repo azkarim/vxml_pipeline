@@ -15,8 +15,8 @@ fn apply(vxml: vxml.VXML, desugarer: Desugarer) -> vxml.VXML {
 }
 
 fn complete_handle_lifecycle_test() {
-  let assert Ok([source]) =
-    vxml.parse_string(
+  let assert Ok(source) =
+    vxml.string_to_vxml(
       "<> root
   path=chapter.html
   <> MathBlock
@@ -26,7 +26,6 @@ fn complete_handle_lifecycle_test() {
     <>
       'See >>eq:identity'",
       "writerly_handles_integration_test.vxml",
-      True,
     )
 
   let result =

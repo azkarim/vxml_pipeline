@@ -281,6 +281,53 @@ pub fn extend_selector_down(f: Selector, amt: Int) -> Selector {
   }
 }
 
+fn with_selection_status(line: SLine, selected: SelectionStatus) -> SLine {
+  case line {
+    VSLine(_, _, _, _, _) -> VSLine(..line, selected: selected)
+    ASLine(_, _, _, _, _, _) -> ASLine(..line, selected: selected)
+    TSLine(_, _, _, _) -> TSLine(..line, selected: selected)
+    LSLine(_, _, _, _) -> LSLine(..line, selected: selected)
+  }
+}
+
+/// Restricts a selector to the inclusive line-offset interval around each
+/// direct match. Offsets may lie wholly before or wholly after a match.
+pub fn select_relative_window(
+  selector: Selector,
+  first_offset: Int,
+  last_offset: Int,
+) -> Selector {
+  fn(lines) {
+    let selected_lines = selector(lines)
+    let anchors =
+      selected_lines
+      |> list.index_map(fn(line, index) { #(index, line.selected == OG) })
+      |> list.filter_map(fn(pair) {
+        case pair.1 {
+          True -> Ok(pair.0)
+          False -> Error(Nil)
+        }
+      })
+
+    selected_lines
+    |> list.index_map(fn(line, index) {
+      let offset_from_an_anchor =
+        list.any(anchors, fn(anchor) {
+          let offset = index - anchor
+          offset >= first_offset && offset <= last_offset
+        })
+      case
+        offset_from_an_anchor,
+        line.selected == OG && first_offset <= 0 && last_offset >= 0
+      {
+        _, True -> with_selection_status(line, OG)
+        True, _ -> with_selection_status(line, Bystander)
+        False, _ -> with_selection_status(line, NotSelected)
+      }
+    })
+  }
+}
+
 /// Composes a selector with structural ancestor expansion.
 pub fn extend_selector_to_ancestors(
   f: Selector,

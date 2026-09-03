@@ -23,6 +23,11 @@ pub fn main() {
   assert_parses(["--track", "needle", "+-5", "-+2", "10-20"])
   assert_parses(["--track", "needle", "-1"])
   assert_parses(["--track", "needle", "+5-0"])
+  assert_parses(["--track", "needle", "+30"])
+  assert_parses(["--track", "needle", "-30"])
+  assert_parses(["--track", "needle", "+0+30"])
+  assert_parses(["--track", "needle", "+5+30"])
+  assert_parses(["--track", "needle", "-30-5"])
   assert_parses([
     "--track",
     "needle",
@@ -56,14 +61,22 @@ pub fn main() {
   assert_parses(["--dump", "-cc10", "10", "--dump", "-bc20", "20"])
   assert_parses(["--dump", "-verbatim", "10", "--dump", "-verbatim", "20"])
   assert_parses(["--validate-vxml"])
-  assert_parses(["--validate-vxml", "-warn-attribute-whitespace"])
+  assert_parses(["--validate-vxml", "-mention-leading-val-whitespace"])
+  assert_parses(["--validate-vxml", "-mention-val-leading-whitespace"])
   assert_parses(["--validate-vxml", "-lines-only"])
   assert_does_not_parse(["--validate-vxml", "-unknown"])
   assert_does_not_parse(["--validate-vxml", "--validate-vxml"])
   assert_error_contains(
-    ["--validate-vxml", "-lines-only", "-warn-attribute-whitespace"],
+    ["--validate-vxml", "-lines-only", "-mention-leading-val-whitespace"],
     "ConflictingOptionArguments",
   )
+  assert_error_contains(
+    ["--validate-vxml", "-lines-only", "-mention-val-leading-whitespace"],
+    "ConflictingOptionArguments",
+  )
+  assert_does_not_parse(["--validate-vxml", "-warn-attribute-whitespace"])
+  assert_does_not_parse(["--validate-vxml", "-warn-leading-val-whitespace"])
+  assert_does_not_parse(["--validate-vxml", "-warn-val-leading-whitespace"])
   assert_error_contains(
     ["--dump", "-cc10", "10", "--dump", "-cc20", "20"],
     "ConflictingOptionArguments",
@@ -141,8 +154,12 @@ pub fn main() {
   assert_parses(["--dump-filtered"])
   assert_parses(["--dump-splitter"])
   assert_parses(["--dump-splitter", "chapter", "appendix"])
+  assert_parses(["--dump-splitter", "3", "-verbatim"])
+  assert_parses(["--dump-splitter", "3", "-cc10", "-bc20"])
   assert_parses(["--dump-emitter"])
   assert_parses(["--dump-emitter", "lecture-notes/05"])
+  assert_parses(["--dump-emitter", "chapter", "-verbatim"])
+  assert_parses(["--dump-emitter", "chapter", "-cc10", "-bc20"])
   assert_parses([
     "--dump-splitter",
     "chapter",
@@ -195,7 +212,6 @@ pub fn main() {
     "+2-2",
     "+20-30",
   ])
-  assert_does_not_parse(["--track", "needle", "+5"])
   assert_does_not_parse([
     "--track",
     "needle",
