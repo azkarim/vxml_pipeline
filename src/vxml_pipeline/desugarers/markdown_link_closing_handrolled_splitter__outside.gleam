@@ -45,9 +45,7 @@ fn inner_param_to_transform(
 ) -> DesugarerTransform {
   let nodemap: n2t.OneToManyNoErrorNodemap = nodemap(_, inner)
   nodemap
-  |> n2t.one_to_many_no_error_nodemap_2_desugarer_transform_with_forbidden(
-    outside,
-  )
+  |> n2t.one_to_many_no_error_nodemap_2_desugarer_transform_outside(outside)
 }
 
 fn nodemap(vxml: VXML, inner: InnerParam) -> List(VXML) {

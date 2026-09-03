@@ -1,4 +1,11 @@
 //// Literal and regular-expression rules for splitting text into VXML.
+////
+//// A split rule operates on text nodes only. Text outside a match remains text;
+//// each matched segment is interpreted according to a `SplitReplacement`.
+//// Rules can therefore introduce temporary VXML elements that a later
+//// desugarer pairs, folds, or otherwise interprets. Regular-expression
+//// fragments supplied to this module must not contain capturing groups unless
+//// a function explicitly documents otherwise.
 
 import gleam/list
 import gleam/regexp.{type Regexp}
@@ -7,6 +14,7 @@ import vxml.{type Line, type VXML, Attr, Line, T, V}
 import vxml/blame.{type Blame} as bl
 import vxml_pipeline/core
 
+/// Determines how one matched regular-expression segment becomes VXML.
 pub type SplitReplacement {
   Keep
   Discard
@@ -18,14 +26,18 @@ pub type SplitReplacement {
   TextThenTag(String, String)
 }
 
+/// Associates one capture-group pattern with its replacement instruction.
 pub type CaptureGroupReplacement {
   CaptureGroupReplacement(pattern: String, replacement: SplitReplacement)
 }
 
+/// A compiled regular expression whose capture groups have corresponding VXML
+/// replacement instructions.
 pub type RegexpSplitRule {
   RegexpSplitRule(regexp: Regexp, capture_groups: List(CaptureGroupReplacement))
 }
 
+/// Returns a diagnostic representation of a regular-expression split rule.
 pub fn regexp_split_rule_to_string(rule: RegexpSplitRule) -> String {
   rule.capture_groups
   |> list.map(fn(group) {
@@ -134,6 +146,11 @@ fn apply_regexp_split_rule_to_line(
 // Nodemap API
 // *****************
 
+/// Applies one regular-expression split rule to a VXML node.
+///
+/// V-nodes are returned unchanged. Each line of a T-node is split separately,
+/// and the resulting text and element nodes retain blame advanced from the
+/// original line.
 pub fn apply_regexp_split_rule(
   vxml: VXML,
   rule: RegexpSplitRule,
@@ -158,6 +175,7 @@ fn apply_regexp_split_rule_to_nodes(
   |> list.flatten
 }
 
+/// Applies several regular-expression split rules in order to one VXML node.
 pub fn apply_regexp_split_rules(
   vxml: VXML,
   rules: List(RegexpSplitRule),
@@ -169,8 +187,12 @@ pub fn apply_regexp_split_rules(
 // RegexpSplitRule constructor helpers API
 // *****************
 
+/// Regular-expression prefix that requires an even-length run of backslashes
+/// immediately before a delimiter.
 pub const regex_prefix_to_make_unescaped = "(?<!\\\\)(?:(?:\\\\\\\\)*)"
 
+/// Extends `suffix` so it matches only occurrences preceded by an even-length
+/// run of backslashes.
 pub fn unescaped_suffix(suffix: String) -> String {
   regex_prefix_to_make_unescaped <> "(?:" <> suffix <> ")"
 }
@@ -245,6 +267,12 @@ fn trailing_backslash_run(s: String) -> Int {
   }
 }
 
+/// Recombines literal split segments whose separators were escaped.
+///
+/// `splits` is the result of splitting on a literal delimiter and must be
+/// nonempty. A delimiter preceded by an odd-length backslash run is restored as
+/// `escaped_splitter_replacement`, consuming one escaping backslash. An even
+/// run leaves the delimiter active.
 pub fn remaining_unescaped_splits(
   splits: List(String),
   escaped_splitter_replacement: String,
@@ -330,6 +358,11 @@ fn naive_unescaped_split_line(
 // naive_unescaped Nodemap API
 // *****************
 
+/// Splits the lines of one text node on an unescaped literal delimiter.
+///
+/// V-nodes are returned unchanged. `escaped_splitter_replacement` specifies
+/// the text restored for escaped occurrences, while `replacement` determines
+/// how active occurrences become VXML.
 pub fn naive_unescaped_split_node(
   vxml: VXML,
   splitter: String,

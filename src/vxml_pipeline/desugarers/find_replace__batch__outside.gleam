@@ -12,7 +12,7 @@ pub const name = "find_replace__batch__outside"
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
 /// Applies each literal replacement to text nodes outside
-/// the forbidden subtrees.
+/// the listed subtrees.
 pub fn constructor(param: Param, outside: List(String)) -> Desugarer {
   authoring.desugarer_with_outside(
     name: name,
@@ -49,9 +49,7 @@ fn inner_param_to_transform(
     inner,
   )
   nodemap
-  |> n2t.one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
-    outside,
-  )
+  |> n2t.one_to_one_no_error_nodemap_2_desugarer_transform_outside(outside)
 }
 
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊

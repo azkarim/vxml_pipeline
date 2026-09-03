@@ -1,3 +1,37 @@
+//// Tree walkers that lift a single-node mapping function into a complete
+//// `DesugarerTransform`.
+////
+//// Ordinary nodemaps are post-order: children are transformed before their
+//// parent. Functions ending in `_without_walking` apply only to the supplied
+//// root. Functions ending in `_outside` leave V-nodes named by the `outside`
+//// list, and their entire subtrees, unchanged. Those tag names are validated
+//// when the transform is constructed.
+////
+//// Nodemap family names use this term order:
+////
+//// ```text
+//// EarlyReturn | ""
+//// Fancy | ""
+//// OneToOne | OneToMany | OneToOption
+//// EnterExitStateful | Stateful | ""
+//// WithChildStates | ""
+//// NoError | ""
+//// WithWarnings | ""
+//// Nodemap
+//// ```
+////
+//// `OneToOne`, `OneToMany`, and `OneToOption` describe the number of output
+//// nodes. `Fancy` supplies ancestor and sibling context. `Stateful` threads an
+//// accumulator through the walk. `EnterExitStateful` provides separate hooks
+//// before and after child traversal; its exit hook receives both the state at
+//// entry and the latest descendant state. `WithChildStates` additionally
+//// supplies the state returned by each child. `EarlyReturn` can suppress
+//// descent into the current subtree. `NoError` and `WithWarnings` describe the
+//// callback's result capabilities.
+////
+//// Stateful visitors form a separate family: they gather state without
+//// returning replacement VXML.
+
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
@@ -11,19 +45,24 @@ import vxml_pipeline/core.{
 import on
 import vxml/blame as bl
 
+/// Pairs a transformed VXML root with an empty warning list.
 pub fn add_no_warnings(vxml: VXML) {
   #(vxml, [])
 }
 
+/// A fallible transformation of one VXML node into one node.
 pub type NodeToNode =
   fn(VXML) -> Result(VXML, DesugaringError)
 
+/// A fallible one-node transformation that may emit warnings.
 pub type NodeToNodeWithWarnings =
   fn(VXML) -> Result(#(VXML, List(DesugaringWarning)), DesugaringError)
 
+/// A fallible root inspection or side calculation that returns no VXML.
 pub type NodeToNil =
   fn(VXML) -> Result(Nil, DesugaringError)
 
+/// Converts a root-only one-node transformation into a desugarer transform.
 pub fn node_to_node_2_desugarer_transform_without_walking(
   node_to_node: NodeToNode,
 ) {
@@ -33,12 +72,16 @@ pub fn node_to_node_2_desugarer_transform_without_walking(
   }
 }
 
+/// Converts a warning-producing root-only transformation into a desugarer
+/// transform.
 pub fn node_to_node_with_warnings_2_desugarer_transform_without_walking(
   node_to_node: NodeToNodeWithWarnings,
 ) {
   node_to_node
 }
 
+/// Runs a root-only `NodeToNil` callback and returns the original VXML when it
+/// succeeds.
 pub fn node_to_nil_2_desugarer_transform_without_walking(
   node_to_nil: NodeToNil,
 ) {
@@ -48,10 +91,12 @@ pub fn node_to_nil_2_desugarer_transform_without_walking(
   }
 }
 
+/// A desugarer transform that returns its input unchanged without warnings.
 pub fn identity_transform(vxml: VXML) {
   Ok(#(vxml, []))
 }
 
+/// An enter/exit hook that leaves both VXML and state unchanged.
 pub fn enter_exit_identity(
   vxml: VXML,
   state: state,
@@ -59,6 +104,7 @@ pub fn enter_exit_identity(
   Ok(#(vxml, state))
 }
 
+/// An exit hook that keeps the VXML and the latest descendant state.
 pub fn enter_exit_keep_latest_state(
   vxml: VXML,
   _original_state: state,
@@ -106,33 +152,15 @@ fn get_root_option(vxml: Option(VXML)) -> Result(VXML, DesugaringError) {
   }
 }
 
-// Nodemap names use the following term order:
-//
-// EarlyReturn | ""
-// Fancy | ""
-// OneToOne | OneToMany | OneToOption
-// EnterExitStateful | Stateful | ""
-// WithChildStates | ""
-// NoError | ""
-// WithWarnings | ""
-// Nodemap
-//
-// EarlyReturn nodemaps can skip descent into a subtree. Fancy nodemaps receive
-// ancestor and sibling context. EnterExitStateful nodemaps have hooks before
-// and after child traversal. WithChildStates means that the exit hook receives
-// the state returned by each child rather than only the latest state.
-//
-// Stateful visitors, which gather state without returning VXML, form a separate
-// family and do not use the Nodemap suffix.
-
 // ************************************************************
 // OneToOneNoErrorNodemap
 // ************************************************************
 
+/// An infallible callback that replaces one node with one node.
 pub type OneToOneNoErrorNodemap =
   fn(VXML) -> VXML
 
-// *** without forbidden ***
+// *** ordinary walk ***
 
 pub fn one_to_one_no_error_nodemap_walk(
   node: VXML,
@@ -163,17 +191,17 @@ pub fn one_to_one_no_error_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
-fn one_to_one_no_error_nodemap_walk_with_forbidden(
+fn one_to_one_no_error_nodemap_walk_outside(
   node: VXML,
   nodemap: OneToOneNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> VXML {
   case node {
     T(_, _) -> nodemap(node)
     V(_, tag, _, children) -> {
-      case list.contains(forbidden, tag) {
+      case list.contains(outside, tag) {
         True -> node
         False ->
           nodemap(
@@ -181,11 +209,7 @@ fn one_to_one_no_error_nodemap_walk_with_forbidden(
               ..node,
               children: list.map(
                 children,
-                one_to_one_no_error_nodemap_walk_with_forbidden(
-                  _,
-                  nodemap,
-                  forbidden,
-                ),
+                one_to_one_no_error_nodemap_walk_outside(_, nodemap, outside),
               ),
             ),
           )
@@ -194,40 +218,40 @@ fn one_to_one_no_error_nodemap_walk_with_forbidden(
   }
 }
 
-pub fn one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
+pub fn one_to_one_no_error_nodemap_2_desugarer_transform_outside(
   nodemap: OneToOneNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
-  use <- bad_tag_guard(forbidden)
+  use <- bad_tag_guard(outside)
 
   fn(vxml) {
-    one_to_one_no_error_nodemap_walk_with_forbidden(vxml, nodemap, forbidden)
+    one_to_one_no_error_nodemap_walk_outside(vxml, nodemap, outside)
     |> add_no_warnings
     |> Ok
   }
 }
 
-// *** with forbidden, self_first ***
+// *** outside-aware, self first ***
 
-fn one_to_one_no_error_nodemap_walk_with_forbidden_self_first(
+fn one_to_one_no_error_nodemap_walk_outside_self_first(
   node: VXML,
   nodemap: OneToOneNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> VXML {
   case node {
     T(_, _) -> nodemap(node)
     V(_, tag, _, _) ->
-      case list.contains(forbidden, tag) {
+      case list.contains(outside, tag) {
         True -> node
         False -> {
           let assert V(_, _, _, children) as node = nodemap(node)
           let children =
             list.map(
               children,
-              one_to_one_no_error_nodemap_walk_with_forbidden_self_first(
+              one_to_one_no_error_nodemap_walk_outside_self_first(
                 _,
                 nodemap,
-                forbidden,
+                outside,
               ),
             )
           V(..node, children: children)
@@ -236,18 +260,14 @@ fn one_to_one_no_error_nodemap_walk_with_forbidden_self_first(
   }
 }
 
-pub fn one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden_self_first(
+pub fn one_to_one_no_error_nodemap_2_desugarer_transform_outside_self_first(
   nodemap: OneToOneNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
-  use <- bad_tag_guard(forbidden)
+  use <- bad_tag_guard(outside)
 
   fn(vxml) {
-    one_to_one_no_error_nodemap_walk_with_forbidden_self_first(
-      vxml,
-      nodemap,
-      forbidden,
-    )
+    one_to_one_no_error_nodemap_walk_outside_self_first(vxml, nodemap, outside)
     |> add_no_warnings
     |> Ok
   }
@@ -257,10 +277,11 @@ pub fn one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden_self_fir
 // OneToOneNoErrorWithWarningsNodemap
 // ************************************************************
 
+/// An infallible one-to-one callback that may emit warnings.
 pub type OneToOneNoErrorWithWarningsNodemap =
   fn(VXML) -> #(VXML, List(DesugaringWarning))
 
-// *** without forbidden ***
+// *** ordinary walk ***
 
 pub fn one_to_one_no_error_with_warnings_nodemap_walk(
   node: VXML,
@@ -295,10 +316,11 @@ pub fn one_to_one_no_error_with_warnings_nodemap_2_desugarer_transform(
 // OneToOneNodemap
 // ************************************************************
 
+/// A fallible callback that replaces one node with one node.
 pub type OneToOneNodemap =
   fn(VXML) -> Result(VXML, DesugaringError)
 
-// *** without forbidden ***
+// *** ordinary walk ***
 
 fn one_to_one_nodemap_walk(
   node: VXML,
@@ -325,26 +347,22 @@ pub fn one_to_one_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
-fn one_to_one_nodemap_walk_with_forbidden(
+fn one_to_one_nodemap_walk_outside(
   node: VXML,
   nodemap: OneToOneNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> Result(VXML, DesugaringError) {
   case node {
     T(_, _) -> nodemap(node)
     V(_, tag, _, children) ->
-      case list.contains(forbidden, tag) {
+      case list.contains(outside, tag) {
         True -> Ok(node)
         False -> {
           use children <- on.ok(
             children
-            |> list.try_map(one_to_one_nodemap_walk_with_forbidden(
-              _,
-              nodemap,
-              forbidden,
-            )),
+            |> list.try_map(one_to_one_nodemap_walk_outside(_, nodemap, outside)),
           )
           nodemap(V(..node, children: children))
         }
@@ -352,14 +370,14 @@ fn one_to_one_nodemap_walk_with_forbidden(
   }
 }
 
-pub fn one_to_one_nodemap_2_desugarer_transform_with_forbidden(
+pub fn one_to_one_nodemap_2_desugarer_transform_outside(
   nodemap: OneToOneNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
-  use <- bad_tag_guard(forbidden)
+  use <- bad_tag_guard(outside)
 
   fn(vxml) {
-    one_to_one_nodemap_walk_with_forbidden(vxml, nodemap, forbidden)
+    one_to_one_nodemap_walk_outside(vxml, nodemap, outside)
     |> result.map(add_no_warnings)
   }
 }
@@ -368,10 +386,11 @@ pub fn one_to_one_nodemap_2_desugarer_transform_with_forbidden(
 // OneToManyNoErrorNodemap
 // ************************************************************
 
+/// An infallible callback that replaces one node with zero or more nodes.
 pub type OneToManyNoErrorNodemap =
   fn(VXML) -> List(VXML)
 
-// *** without forbidden ***
+// *** ordinary walk ***
 
 pub fn one_to_many_no_error_nodemap_walk(
   node: VXML,
@@ -408,25 +427,25 @@ pub fn one_to_many_no_error_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
-fn one_to_many_no_error_nodemap_walk_with_forbidden(
+fn one_to_many_no_error_nodemap_walk_outside(
   node: VXML,
   nodemap: OneToManyNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> List(VXML) {
   case node {
     T(_, _) -> nodemap(node)
     V(_, tag, _, children) ->
-      case list.contains(forbidden, tag) {
+      case list.contains(outside, tag) {
         True -> [node]
         False -> {
           let children =
             children
-            |> list.map(one_to_many_no_error_nodemap_walk_with_forbidden(
+            |> list.map(one_to_many_no_error_nodemap_walk_outside(
               _,
               nodemap,
-              forbidden,
+              outside,
             ))
             |> list.flatten
           nodemap(V(..node, children: children))
@@ -435,14 +454,14 @@ fn one_to_many_no_error_nodemap_walk_with_forbidden(
   }
 }
 
-pub fn one_to_many_no_error_nodemap_2_desugarer_transform_with_forbidden(
+pub fn one_to_many_no_error_nodemap_2_desugarer_transform_outside(
   nodemap: OneToManyNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
-  use <- bad_tag_guard(forbidden)
+  use <- bad_tag_guard(outside)
 
   fn(vxml) {
-    one_to_many_no_error_nodemap_walk_with_forbidden(vxml, nodemap, forbidden)
+    one_to_many_no_error_nodemap_walk_outside(vxml, nodemap, outside)
     |> get_root
     |> result.map(add_no_warnings)
   }
@@ -452,10 +471,11 @@ pub fn one_to_many_no_error_nodemap_2_desugarer_transform_with_forbidden(
 // OneToManyNoErrorWithWarningsNodemap
 // ************************************************************
 
+/// An infallible one-to-many callback that may emit warnings.
 pub type OneToManyNoErrorWithWarningsNodemap =
   fn(VXML) -> #(List(VXML), List(DesugaringWarning))
 
-// *** without forbidden ***
+// *** ordinary walk ***
 
 pub fn one_to_many_no_error_with_warnings_nodemap_walk(
   node: VXML,
@@ -492,10 +512,11 @@ pub fn one_to_many_no_error_with_warnings_nodemap_2_desugarer_transform(
 // OneToManyNodemap
 // ************************************************************
 
+/// A fallible callback that replaces one node with zero or more nodes.
 pub type OneToManyNodemap =
   fn(VXML) -> Result(List(VXML), DesugaringError)
 
-// *** without forbidden ***
+// *** ordinary walk ***
 
 fn one_to_many_nodemap_walk(
   node: VXML,
@@ -524,25 +545,25 @@ pub fn one_to_many_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
-fn one_to_many_nodemap_walk_with_forbidden(
+fn one_to_many_nodemap_walk_outside(
   node: VXML,
   nodemap: OneToManyNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> Result(List(VXML), DesugaringError) {
   case node {
     T(_, _) -> nodemap(node)
     V(_, tag, _, children) ->
-      case list.contains(forbidden, tag) {
+      case list.contains(outside, tag) {
         True -> Ok([node])
         False -> {
           use children <- on.ok(
             children
-            |> list.try_map(one_to_many_nodemap_walk_with_forbidden(
+            |> list.try_map(one_to_many_nodemap_walk_outside(
               _,
               nodemap,
-              forbidden,
+              outside,
             ))
             |> result.map(list.flatten),
           )
@@ -552,14 +573,14 @@ fn one_to_many_nodemap_walk_with_forbidden(
   }
 }
 
-pub fn one_to_many_nodemap_2_desugarer_transform_with_forbidden(
+pub fn one_to_many_nodemap_2_desugarer_transform_outside(
   nodemap: OneToManyNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
-  use <- bad_tag_guard(forbidden)
+  use <- bad_tag_guard(outside)
 
   fn(vxml) {
-    one_to_many_nodemap_walk_with_forbidden(vxml, nodemap, forbidden)
+    one_to_many_nodemap_walk_outside(vxml, nodemap, outside)
     |> on.ok(get_root)
     |> result.map(add_no_warnings)
   }
@@ -569,6 +590,7 @@ pub fn one_to_many_nodemap_2_desugarer_transform_with_forbidden(
 // FancyOneToOneNoErrorNodemap
 // ************************************************************
 
+/// An infallible one-to-one callback with tree-position context.
 pub type FancyOneToOneNoErrorNodemap =
   fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML)) -> VXML
 
@@ -630,6 +652,7 @@ pub fn fancy_one_to_one_no_error_nodemap_2_desugarer_transform(
 // FancyOneToOneNodemap
 // ************************************************************
 
+/// A fallible one-to-one callback with tree-position context.
 pub type FancyOneToOneNodemap =
   fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML)) ->
     Result(VXML, DesugaringError)
@@ -701,16 +724,16 @@ pub fn fancy_one_to_one_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
-fn fancy_one_to_one_nodemap_walk_with_forbidden(
+fn fancy_one_to_one_nodemap_walk_outside(
   node: VXML,
   ancestors: List(VXML),
   previous_siblings_before_mapping: List(VXML),
   previous_siblings_after_mapping: List(VXML),
   following_siblings_before_mapping: List(VXML),
   nodemap: FancyOneToOneNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> Result(VXML, DesugaringError) {
   case node {
     T(_, _) ->
@@ -722,7 +745,7 @@ fn fancy_one_to_one_nodemap_walk_with_forbidden(
         following_siblings_before_mapping,
       )
     V(blame, tag, attrs, children) -> {
-      use <- on.true_false(list.contains(forbidden, tag), fn() { Ok(node) })
+      use <- on.true_false(list.contains(outside, tag), fn() { Ok(node) })
       let children_ancestors = [node, ..ancestors]
       use children <- on.ok(
         list.try_fold(
@@ -730,14 +753,14 @@ fn fancy_one_to_one_nodemap_walk_with_forbidden(
           #([], [], list.drop(children, 1)),
           fn(acc, child) {
             case
-              fancy_one_to_one_nodemap_walk_with_forbidden(
+              fancy_one_to_one_nodemap_walk_outside(
                 child,
                 children_ancestors,
                 acc.0,
                 acc.1,
                 acc.2,
                 nodemap,
-                forbidden,
+                outside,
               )
             {
               Error(e) -> Error(e)
@@ -764,19 +787,19 @@ fn fancy_one_to_one_nodemap_walk_with_forbidden(
   }
 }
 
-pub fn fancy_one_to_one_nodemap_2_desugarer_transform_with_forbidden(
+pub fn fancy_one_to_one_nodemap_2_desugarer_transform_outside(
   nodemap: FancyOneToOneNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
   fn(vxml) {
-    fancy_one_to_one_nodemap_walk_with_forbidden(
+    fancy_one_to_one_nodemap_walk_outside(
       vxml,
       [],
       [],
       [],
       [],
       nodemap,
-      forbidden,
+      outside,
     )
     |> result.map(add_no_warnings)
   }
@@ -786,6 +809,7 @@ pub fn fancy_one_to_one_nodemap_2_desugarer_transform_with_forbidden(
 // FancyOneToManyNoErrorNodemap
 // ************************************************************
 
+/// An infallible one-to-many callback with tree-position context.
 pub type FancyOneToManyNoErrorNodemap =
   fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML)) -> List(VXML)
 
@@ -851,6 +875,7 @@ pub fn fancy_one_to_many_no_error_nodemap_2_desugarer_transform(
 // FancyOneToManyNodemap
 // ************************************************************
 
+/// A fallible one-to-many callback with tree-position context.
 pub type FancyOneToManyNodemap =
   fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML)) ->
     Result(List(VXML), DesugaringError)
@@ -927,6 +952,7 @@ pub fn fancy_one_to_many_nodemap_2_desugarer_transform(
 // OneToOneStatefulNodemap
 // ************************************************************
 
+/// A fallible one-to-one callback that threads state through the walk.
 pub type OneToOneStatefulNodemap(a) =
   fn(VXML, a) -> Result(#(VXML, a), DesugaringError)
 
@@ -965,6 +991,8 @@ pub fn one_to_one_stateful_nodemap_2_desugarer_transform(
 // OneToOneEnterExitStatefulNoErrorNodemap
 // ************************************************************
 
+/// Infallible stateful callbacks for entering elements, exiting elements, and
+/// visiting text nodes.
 pub type OneToOneEnterExitStatefulNoErrorNodemap(a) {
   OneToOneEnterExitStatefulNoErrorNodemap(
     on_enter: fn(VXML, a) -> #(VXML, a),
@@ -1017,7 +1045,7 @@ pub fn one_to_one_enter_exit_stateful_no_error_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
 fn custom_map_folder(
   // (this function is to avoid some stupid '#(v, s) -> #(s, v)' inversion step
@@ -1036,16 +1064,16 @@ fn custom_map_folder(
   }
 }
 
-fn one_to_one_enter_exit_stateful_no_error_nodemap_walk_with_forbidden(
+fn one_to_one_enter_exit_stateful_no_error_nodemap_walk_outside(
   original_state: a,
   node: VXML,
   nodemap: OneToOneEnterExitStatefulNoErrorNodemap(a),
-  forbidden: List(String),
+  outside: List(String),
 ) -> #(VXML, a) {
   case node {
     T(_, _) -> nodemap.on_text(node, original_state)
     V(_, tag, _, _) -> {
-      case list.contains(forbidden, tag) {
+      case list.contains(outside, tag) {
         True -> #(node, original_state)
         False -> {
           let assert #(V(_, _, _, children) as node, latest_state) =
@@ -1055,11 +1083,11 @@ fn one_to_one_enter_exit_stateful_no_error_nodemap_walk_with_forbidden(
               children,
               latest_state,
               fn(child, state) {
-                one_to_one_enter_exit_stateful_no_error_nodemap_walk_with_forbidden(
+                one_to_one_enter_exit_stateful_no_error_nodemap_walk_outside(
                   state,
                   child,
                   nodemap,
-                  forbidden,
+                  outside,
                 )
               },
               [],
@@ -1075,18 +1103,18 @@ fn one_to_one_enter_exit_stateful_no_error_nodemap_walk_with_forbidden(
   }
 }
 
-pub fn one_to_one_enter_exit_stateful_no_error_nodemap_2_desugarer_transform_with_forbidden(
+pub fn one_to_one_enter_exit_stateful_no_error_nodemap_2_desugarer_transform_outside(
   nodemap: OneToOneEnterExitStatefulNoErrorNodemap(a),
   initial_state: a,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
   fn(vxml) {
     let #(vxml, _) =
-      one_to_one_enter_exit_stateful_no_error_nodemap_walk_with_forbidden(
+      one_to_one_enter_exit_stateful_no_error_nodemap_walk_outside(
         initial_state,
         vxml,
         nodemap,
-        forbidden,
+        outside,
       )
     Ok(#(vxml, []))
   }
@@ -1096,6 +1124,8 @@ pub fn one_to_one_enter_exit_stateful_no_error_nodemap_2_desugarer_transform_wit
 // OneToOneEnterExitStatefulNodemap
 // ************************************************************
 
+/// Fallible stateful callbacks for entering elements, exiting elements, and
+/// visiting text nodes.
 pub type OneToOneEnterExitStatefulNodemap(a) {
   OneToOneEnterExitStatefulNodemap(
     on_enter: fn(VXML, a) -> Result(#(VXML, a), DesugaringError),
@@ -1146,6 +1176,7 @@ pub fn one_to_one_enter_exit_stateful_nodemap_2_desugarer_transform(
 // EarlyReturnOneToOneEnterExitStatefulNodemap
 // ************************************************************
 
+/// Fallible enter/exit callbacks that may skip the current subtree.
 pub type EarlyReturnOneToOneEnterExitStatefulNodemap(a) {
   EarlyReturnOneToOneEnterExitStatefulNodemap(
     on_enter: fn(VXML, a) -> Result(#(VXML, a, TrafficLight), DesugaringError),
@@ -1208,6 +1239,7 @@ pub fn early_return_one_to_one_enter_exit_stateful_nodemap_2_desugarer_transform
 // FancyOneToOneEnterExitStatefulNodemap(a)
 // ************************************************************
 
+/// Fallible enter/exit callbacks with tree-position context.
 pub type FancyOneToOneEnterExitStatefulNodemap(a) {
   FancyOneToOneEnterExitStatefulNodemap(
     on_enter: fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML), a) ->
@@ -1311,6 +1343,7 @@ pub fn fancy_one_to_one_enter_exit_stateful_nodemap_2_desugarer_transform(
 // FancyOneToOneEnterExitStatefulWithWarningsNodemap(a)
 // ************************************************************
 
+/// Fallible contextual enter/exit callbacks that may emit warnings.
 pub type FancyOneToOneEnterExitStatefulWithWarningsNodemap(a) {
   FancyOneToOneEnterExitStatefulWithWarningsNodemap(
     on_enter: fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML), a) ->
@@ -1418,6 +1451,7 @@ pub fn fancy_one_to_one_enter_exit_stateful_with_warnings_nodemap_2_desugarer_tr
 // EarlyReturnOneToOneEnterExitStatefulWithWarningsNodemap(a)
 // ************************************************************
 
+/// Fallible warning-producing enter/exit callbacks that may skip subtrees.
 pub type EarlyReturnOneToOneEnterExitStatefulWithWarningsNodemap(a) {
   EarlyReturnOneToOneEnterExitStatefulWithWarningsNodemap(
     on_enter: fn(VXML, a) ->
@@ -1494,6 +1528,7 @@ pub fn early_return_one_to_one_enter_exit_stateful_with_warnings_nodemap_2_desug
 // EarlyReturnFancyOneToOneEnterExitStatefulWithWarningsNodemap(a)
 // ************************************************************
 
+/// Fallible contextual enter/exit callbacks that may warn or skip subtrees.
 pub type EarlyReturnFancyOneToOneEnterExitStatefulWithWarningsNodemap(a) {
   EarlyReturnFancyOneToOneEnterExitStatefulWithWarningsNodemap(
     on_enter: fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML), a) ->
@@ -1611,6 +1646,8 @@ pub fn early_return_fancy_one_to_one_enter_exit_stateful_with_warnings_nodemap_2
 // WithChildStates means that on_exit receives the list of all child states,
 // rather than only the state returned by the last child.
 
+/// Infallible enter/exit callbacks that may remove nodes and inspect every
+/// child's resulting state.
 pub type EarlyReturnOneToOptionEnterExitStatefulWithChildStatesNoErrorNodemap(a) {
   EarlyReturnOneToOptionEnterExitStatefulWithChildStatesNoErrorNodemap(
     on_enter: fn(VXML, a) -> #(Option(VXML), a, TrafficLight),
@@ -1679,6 +1716,8 @@ pub fn early_return_one_to_option_enter_exit_stateful_with_child_states_no_error
 // EarlyReturnFancyOneToOptionEnterExitStatefulWithWarningsNodemap(a)
 // ************************************************************
 
+/// Contextual enter/exit callbacks that may remove nodes, warn, fail, or skip
+/// subtrees.
 pub type EarlyReturnFancyOneToOptionEnterExitStatefulWithWarningsNodemap(a) {
   EarlyReturnFancyOneToOptionEnterExitStatefulWithWarningsNodemap(
     on_enter: fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML), a) ->
@@ -1810,6 +1849,7 @@ pub fn early_return_fancy_one_to_option_enter_exit_stateful_with_warnings_nodema
 // OneToManyEnterExitStatefulNodemap
 // ************************************************************
 
+/// Fallible stateful enter/exit callbacks that return zero or more nodes.
 pub type OneToManyEnterExitStatefulNodemap(a) {
   OneToManyEnterExitStatefulNodemap(
     on_enter: fn(VXML, a) -> Result(#(VXML, a), DesugaringError),
@@ -1863,6 +1903,7 @@ pub fn one_to_many_enter_exit_stateful_nodemap_2_desugarer_transform(
 // OneToManyEnterExitStatefulWithWarningsNodemap
 // ************************************************************
 
+/// Fallible stateful one-to-many enter/exit callbacks that may emit warnings.
 pub type OneToManyEnterExitStatefulWithWarningsNodemap(a) {
   OneToManyEnterExitStatefulWithWarningsNodemap(
     on_enter: fn(VXML, a) ->
@@ -1950,6 +1991,7 @@ pub fn one_to_many_enter_exit_stateful_with_warnings_nodemap_2_desugarer_transfo
 // EarlyReturnOneToOneNoErrorNodemap
 // ************************************************************
 
+/// An infallible one-to-one callback that may skip the current subtree.
 pub type EarlyReturnOneToOneNoErrorNodemap =
   fn(VXML) -> #(VXML, TrafficLight)
 
@@ -1979,43 +2021,41 @@ pub fn early_return_one_to_one_no_error_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
-fn early_return_one_to_one_no_error_nodemap_walk_with_forbidden(
+fn early_return_one_to_one_no_error_nodemap_walk_outside(
   node: VXML,
   nodemap: EarlyReturnOneToOneNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> VXML {
-  use <- on.eager_true_false(core.is_v_and_tag_is_one_of(node, forbidden), node)
+  use <- on.eager_true_false(core.is_v_and_tag_is_one_of(node, outside), node)
   let #(node, signal) = nodemap(node)
   case node, signal {
     V(_, _, _, children), Continue -> {
       let children =
         children
-        |> list.map(
-          early_return_one_to_one_no_error_nodemap_walk_with_forbidden(
-            _,
-            nodemap,
-            forbidden,
-          ),
-        )
+        |> list.map(early_return_one_to_one_no_error_nodemap_walk_outside(
+          _,
+          nodemap,
+          outside,
+        ))
       V(..node, children: children)
     }
     _, _ -> node
   }
 }
 
-pub fn early_return_one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
+pub fn early_return_one_to_one_no_error_nodemap_2_desugarer_transform_outside(
   nodemap: EarlyReturnOneToOneNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
-  use <- bad_tag_guard(forbidden)
+  use <- bad_tag_guard(outside)
 
   fn(vxml) {
-    early_return_one_to_one_no_error_nodemap_walk_with_forbidden(
+    early_return_one_to_one_no_error_nodemap_walk_outside(
       vxml,
       nodemap,
-      forbidden,
+      outside,
     )
     |> add_no_warnings
     |> Ok
@@ -2026,6 +2066,7 @@ pub fn early_return_one_to_one_no_error_nodemap_2_desugarer_transform_with_forbi
 // EarlyReturnFancyOneToOneNoErrorNodemap
 // ************************************************************
 
+/// An infallible contextual one-to-one callback that may skip subtrees.
 pub type EarlyReturnFancyOneToOneNoErrorNodemap =
   fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML)) ->
     #(VXML, TrafficLight)
@@ -2090,6 +2131,7 @@ pub fn early_return_fancy_one_to_one_no_error_nodemap_2_desugarer_transform(
 // EarlyReturnOneToOneNodemap
 // ************************************************************
 
+/// A fallible one-to-one callback that may skip the current subtree.
 pub type EarlyReturnOneToOneNodemap =
   fn(VXML) -> Result(#(VXML, TrafficLight), DesugaringError)
 
@@ -2122,10 +2164,11 @@ pub fn early_return_one_to_one_nodemap_2_desugarer_transform(
 // EarlyReturnOneToManyNoErrorNodemap
 // ************************************************************
 
+/// An infallible one-to-many callback that may skip the current subtree.
 pub type EarlyReturnOneToManyNoErrorNodemap =
   fn(VXML) -> #(List(VXML), TrafficLight)
 
-// *** without forbidden ***
+// *** ordinary walk ***
 
 fn early_return_one_to_many_no_error_nodemap_walk(
   node: VXML,
@@ -2162,14 +2205,14 @@ pub fn early_return_one_to_many_no_error_nodemap_2_desugarer_transform(
   }
 }
 
-// *** with forbidden ***
+// *** outside-aware walk ***
 
-fn early_return_one_to_many_no_error_nodemap_walk_with_forbidden(
+fn early_return_one_to_many_no_error_nodemap_walk_outside(
   node: VXML,
   nodemap: EarlyReturnOneToManyNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> List(VXML) {
-  use <- on.true_false(core.is_v_and_tag_is_one_of(node, forbidden), fn() {
+  use <- on.true_false(core.is_v_and_tag_is_one_of(node, outside), fn() {
     [node]
   })
   let #(nodes, signal) = nodemap(node)
@@ -2180,13 +2223,11 @@ fn early_return_one_to_many_no_error_nodemap_walk_with_forbidden(
     [V(_, _, _, children) as node], Continue -> {
       let children =
         children
-        |> list.map(
-          early_return_one_to_many_no_error_nodemap_walk_with_forbidden(
-            _,
-            nodemap,
-            forbidden,
-          ),
-        )
+        |> list.map(early_return_one_to_many_no_error_nodemap_walk_outside(
+          _,
+          nodemap,
+          outside,
+        ))
         |> list.flatten
       [V(..node, children: children)]
     }
@@ -2199,17 +2240,17 @@ fn early_return_one_to_many_no_error_nodemap_walk_with_forbidden(
   }
 }
 
-pub fn early_return_one_to_many_no_error_nodemap_2_desugarer_transform_with_forbidden(
+pub fn early_return_one_to_many_no_error_nodemap_2_desugarer_transform_outside(
   nodemap: EarlyReturnOneToManyNoErrorNodemap,
-  forbidden: List(String),
+  outside: List(String),
 ) -> DesugarerTransform {
-  use <- bad_tag_guard(forbidden)
+  use <- bad_tag_guard(outside)
 
   fn(vxml) {
-    early_return_one_to_many_no_error_nodemap_walk_with_forbidden(
+    early_return_one_to_many_no_error_nodemap_walk_outside(
       vxml,
       nodemap,
-      forbidden,
+      outside,
     )
     |> get_root
     |> result.map(add_no_warnings)
@@ -2220,6 +2261,7 @@ pub fn early_return_one_to_many_no_error_nodemap_2_desugarer_transform_with_forb
 // StatefulNoErrorVisitor
 // ************************************************************
 
+/// An infallible state-gathering visitor.
 pub type StatefulNoErrorVisitor(a) =
   fn(VXML, a) -> a
 
@@ -2243,6 +2285,7 @@ pub fn stateful_no_error_visit(
 // EarlyReturnStatefulVisitor
 // ************************************************************
 
+/// A fallible state-gathering visitor that may skip the current subtree.
 pub type EarlyReturnStatefulVisitor(a) =
   fn(VXML, a) -> Result(#(a, TrafficLight), DesugaringError)
 

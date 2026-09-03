@@ -1,3 +1,9 @@
+//// Terminal table primitives and VXML Pipeline diagnostic tables.
+////
+//// The generic `table` renderer accepts ordinary cell rows and spanning rows.
+//// Other functions in this module adapt pipeline steps, timings, and blame for
+//// the package's command-line presentation.
+
 import either_or.{type EitherOr, Either, Or}
 import gleam/int
 import gleam/io
@@ -7,38 +13,47 @@ import gleam/string.{inspect as ins}
 import vxml/blame.{type Blame} as bl
 import vxml_pipeline/core.{type Desugarer}
 
+/// Repeats the ASCII dash character `num` times.
 pub fn dashes(num: Int) -> String {
   string.repeat("-", num)
 }
 
+/// Repeats the box-drawing horizontal character `num` times.
 pub fn solid_dashes(num: Int) -> String {
   string.repeat("─", num)
 }
 
+/// Returns `num` spaces.
 pub fn spaces(num: Int) -> String {
   string.repeat(" ", num)
 }
 
+/// Returns `num` full stops.
 pub fn dots(num: Int) -> String {
   string.repeat(".", num)
 }
 
+/// Returns `num` horizontal ellipsis characters.
 pub fn threedots(num: Int) -> String {
   string.repeat("…", num)
 }
 
+/// Returns `num` two-dot leader characters.
 pub fn twodots(num: Int) -> String {
   string.repeat("‥", num)
 }
 
+/// Returns `num` underscores.
 pub fn underscores(num: Int) -> String {
   string.repeat("_", num)
 }
 
+/// Returns `num` solid block characters.
 pub fn blocks(num: Int) -> String {
   string.repeat("█", num)
 }
 
+/// Formats a count followed by the appropriate singular or plural noun.
 pub fn how_many(singular: String, plural: String, count: Int) -> String {
   case count {
     1 -> "1 " <> singular
@@ -46,15 +61,18 @@ pub fn how_many(singular: String, plural: String, count: Int) -> String {
   }
 }
 
+/// One table cell and the one-character string used to fill unused width.
 pub type TableCell {
   TableCell(content: String, fill: String)
 }
 
+/// An ordinary row of cells or one row spanning the complete table width.
 pub type TableRow {
   Cells(List(TableCell))
   SpanningRow(content: String, fill: String)
 }
 
+/// Per-column padding applied to the right of cell content.
 pub type ColumnStyle {
   ColumnStyle(padding_right: Int)
 }
@@ -149,6 +167,7 @@ fn cell(content: String) -> TableCell {
   TableCell(content, " ")
 }
 
+/// Returns the maximum content widths of a list of two-column rows.
 pub fn two_column_maxes(lines: List(#(String, String))) -> #(Int, Int) {
   list.fold(lines, #(0, 0), fn(acc, pair) {
     #(
@@ -158,12 +177,14 @@ pub fn two_column_maxes(lines: List(#(String, String))) -> #(Int, Int) {
   })
 }
 
+/// Renders pairs as a boxed two-column table.
 pub fn two_column_table(lines: List(#(String, String))) -> List(String) {
   lines
   |> list.map(fn(row) { Cells([cell(row.0), cell(row.1)]) })
   |> table([ColumnStyle(2), ColumnStyle(2)])
 }
 
+/// Renders triples and spanning rows as a boxed three-column table.
 pub fn three_column_table(
   lines: List(EitherOr(#(String, String, String), String)),
 ) -> List(String) {
@@ -177,6 +198,7 @@ pub fn three_column_table(
   |> table([ColumnStyle(1), ColumnStyle(2), ColumnStyle(1)])
 }
 
+/// Renders quadruples and spanning rows as a boxed four-column table.
 pub fn four_column_table(
   lines: List(EitherOr(#(String, String, String, String), String)),
 ) -> List(String) {
@@ -200,6 +222,7 @@ pub fn four_column_table(
   |> table([ColumnStyle(1), ColumnStyle(2), ColumnStyle(1), ColumnStyle(1)])
 }
 
+/// Prints lines with `indent` spaces prepended to each line.
 pub fn print_lines_at_indent(lines: List(String), indent: Int) -> Nil {
   let margin = spaces(indent)
   list.each(lines, fn(l) { io.println(margin <> l) })
@@ -209,6 +232,8 @@ pub fn print_lines_at_indent(lines: List(String), indent: Int) -> Nil {
 // desugarer
 // ************************
 
+/// Formats a desugarer's numbered name, parameter, and optional outside list as
+/// terminal lines.
 pub fn name_and_param_string_lines(
   desugarer: Desugarer,
   step_no: Int,
@@ -300,19 +325,6 @@ pub fn name_and_param_string_lines(
     }
   }
   |> list.map(fn(l) { spaces <> l })
-}
-
-pub fn strip_quotes(string: String) -> String {
-  case
-    {
-      string.starts_with(string, "")
-      && string.ends_with(string, "")
-      && string != ""
-    }
-  {
-    True -> string |> string.drop_start(1) |> string.drop_end(1)
-    False -> string
-  }
 }
 
 fn ddd_truncate(str: String, max_cols) -> String {
@@ -409,6 +421,7 @@ pub fn pipeline_timing_table(
   three_column_table([Either(#("#.", "name", scale)), ..rows])
 }
 
+/// Prints the configured desugaring pipeline as a diagnostic table.
 pub fn print_pipeline(
   desugarers: List(Desugarer),
   default_name_columns: Int,
@@ -440,6 +453,7 @@ pub fn print_pipeline(
   |> print_lines_at_indent(2)
 }
 
+/// Returns a compact blame description, using `"--"` when blame is absent.
 pub fn our_blame_digest(blame: Blame) -> String {
   case bl.blame_digest(blame) {
     "" -> "--"

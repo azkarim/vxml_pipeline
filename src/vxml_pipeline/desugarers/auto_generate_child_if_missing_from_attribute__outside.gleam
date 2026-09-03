@@ -17,7 +17,7 @@ pub const name = "auto_generate_child_if_missing_from_attribute__outside"
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
 /// Prepends a child populated from an attribute outside
-/// forbidden subtrees when a matching parent has the
+/// the listed subtrees when a matching parent has the
 /// attribute but no child of the requested tag.
 pub fn constructor(param: Param, outside: List(String)) -> Desugarer {
   authoring.desugarer_with_outside(
@@ -58,7 +58,7 @@ fn inner_param_to_transform(
 ) -> DesugarerTransform {
   let nodemap: n2t.EarlyReturnOneToOneNoErrorNodemap = nodemap(_, inner)
   nodemap
-  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
+  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_outside(
     outside,
   )
 }

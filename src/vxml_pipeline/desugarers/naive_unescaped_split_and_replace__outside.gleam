@@ -52,9 +52,7 @@ fn inner_param_to_transform(
     inner.2,
   )
   nodemap
-  |> n2t.one_to_many_no_error_nodemap_2_desugarer_transform_with_forbidden(
-    outside,
-  )
+  |> n2t.one_to_many_no_error_nodemap_2_desugarer_transform_outside(outside)
 }
 
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊

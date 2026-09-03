@@ -531,8 +531,8 @@ pub const name = "sigil_counters_substitute__outside"
 ///
 ///          (::|..)(++|--|øø)<counterName>
 ///
-/// inside text lines and attribute values outside configured
-/// forbidden subtrees by the string value of the counter, while
+/// inside text lines and attribute values outside the listed
+/// subtrees by the string value of the counter, while
 /// incrementing/decrementing counters along the way.
 ///
 /// Counter names must match `[A-Za-z]+`. A counter must have

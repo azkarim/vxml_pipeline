@@ -33,6 +33,7 @@ import vxml_pipeline/tables as pr
 import vxml_pipeline/testing
 import vxml_pipeline/tracking.{type Selector}
 
+/// Indentation used by the package's built-in command-line help text.
 pub const help_message_margin = 3
 
 const renderer_runner_margin = 2
@@ -43,20 +44,34 @@ const tracking_progress_quiet_steps = 3
 
 const long_running_desugarer_report_interval_seconds = 10
 
+/// Placement of one feedback block in terminal output.
 pub type FeedbackMargin {
+  /// Indent the block to the renderer or pipeline runner's configured margin.
   AtRunnerMargin
+  /// Print the block exactly as supplied, beginning at column zero.
   Verbatim
 }
 
+/// One independently presented group of feedback lines.
 pub type FeedbackBlock {
   FeedbackBlock(lines: List(String), margin: FeedbackMargin)
 }
 
+/// Optional stage- or monitor-owned feedback.
+///
+/// A stage that has nothing to report returns `NoFeedback`. Each block in
+/// `SomeFeedback` retains its own margin policy and, in interactive monitor
+/// mode, constitutes one independently acknowledged output block.
 pub type Feedback {
   NoFeedback
   SomeFeedback(List(FeedbackBlock))
 }
 
+/// Describes the boundary between two pipeline steps.
+///
+/// Monitors receive step zero before any desugarer runs and one subsequent
+/// context after every completed desugarer. At step zero there is no previous
+/// desugarer; after the final step there is no next desugarer.
 pub type PipelineStepContext {
   PipelineStepContext(
     step_no: Int,
@@ -69,6 +84,7 @@ type MonitorUpdate {
   MonitorUpdate(next: Monitor, feedback: Feedback)
 }
 
+/// An opaque stateful observer run at every pipeline-step boundary.
 pub opaque type Monitor {
   Monitor(
     name: String,
@@ -76,6 +92,11 @@ pub opaque type Monitor {
   )
 }
 
+/// A deferred monitor specification created while parsing command-line
+/// arguments.
+///
+/// Factories are resolved against the completed pipeline so that named and
+/// relative step selections can be validated before execution.
 pub opaque type MonitorFactory {
   TrackingMonitorFactory(Tracker)
   DumpMonitorFactory(List(PipelineStepSpec), VxmlMonitorOutput)
@@ -87,6 +108,12 @@ type VxmlValidationMode {
   ValidateTextLinesOnly
 }
 
+/// Constructs a stateful pipeline monitor.
+///
+/// `update` is called before the first desugarer and after each completed
+/// desugarer. It returns the state for the next call and optional feedback. An
+/// error stops pipeline execution and is reported with the monitor name and
+/// current step number.
 pub fn new_monitor(
   name: String,
   state: state,
@@ -102,11 +129,11 @@ pub fn new_monitor(
   })
 }
 
-// Source path -> assembled input lines and feedback blocks.
-
+/// Assembles an input path into blamed source lines and optional feedback.
 pub type Assembler(assembler_error) =
   fn(String) -> Result(#(List(InputLine), Feedback), assembler_error)
 
+/// Reads one input file without producing feedback.
 pub fn default_file_assembler(
   path: String,
 ) -> Result(#(List(InputLine), Feedback), simplifile.FileError) {
@@ -114,11 +141,13 @@ pub fn default_file_assembler(
   |> result.map(fn(lines) { #(lines, NoFeedback) })
 }
 
-// Assembled input lines -> VXML.
-
+/// Parses assembled input lines into one VXML root and optional feedback.
+///
+/// Parser errors carry the blame location at which parsing failed.
 pub type Parser(parser_error) =
   fn(List(InputLine)) -> Result(#(VXML, Feedback), #(Blame, parser_error))
 
+/// Parses assembled lines as VXML's XML subset.
 pub fn default_xml_parser(
   lines: List(InputLine),
 ) -> Result(#(VXML, Feedback), #(Blame, String)) {
@@ -127,13 +156,17 @@ pub fn default_xml_parser(
   |> result.map_error(fn(e) { #(bl.no_blame, "xml parse error: " <> ins(e)) })
 }
 
+/// Alias of `default_xml_parser` for HTML-oriented renderer configurations.
 pub const default_html_parser = default_xml_parser
 
-// Parsed VXML -> filtered VXML.
-
+/// Filters parsed VXML before the desugaring pipeline runs.
 pub type Filterer(filterer_error) =
   fn(VXML) -> Result(#(VXML, Feedback), filterer_error)
 
+/// Applies the path and attribute selectors in `RendererOptions`.
+///
+/// Tags listed in `saving` are retained while otherwise-unselected ancestors
+/// are reduced around matching content.
 pub fn default_filterer(
   vxml: VXML,
   options: RendererOptions(_),
@@ -157,8 +190,11 @@ pub fn default_filterer(
   Ok(#(vxml, NoFeedback))
 }
 
-// VXML -> classified output fragments.
-
+/// A path-addressed unit of data moving through splitting, emitting, and
+/// writing.
+///
+/// `classifier` carries application-defined metadata while `payload` changes
+/// type between renderer stages.
 pub type OutputFragment(fragment_classifier, payload) {
   OutputFragment(
     classifier: fragment_classifier,
@@ -167,6 +203,7 @@ pub type OutputFragment(fragment_classifier, payload) {
   )
 }
 
+/// Splits one transformed VXML root into path-addressed VXML fragments.
 pub type Splitter(fragment_classifier, splitter_error) =
   fn(VXML) ->
     Result(
@@ -174,9 +211,10 @@ pub type Splitter(fragment_classifier, splitter_error) =
       splitter_error,
     )
 
-/// emits 1 fragment whose 'path' is the tag
-/// of the VXML root concatenated with a provided
-/// suffix, e.g., "<> Book" -> "Book.html"
+/// Constructs a splitter that emits one fragment.
+///
+/// The fragment path is the root VXML tag followed by `suffix`; for example, a
+/// `Book` root and `".html"` produce `"Book.html"`.
 pub fn stub_splitter(suffix: String) -> Splitter(Nil, Nil) {
   fn(root) {
     let assert V(_, tag, _, _) = root
@@ -187,8 +225,7 @@ pub fn stub_splitter(suffix: String) -> Splitter(Nil, Nil) {
   }
 }
 
-// VXML fragments -> output-line fragments.
-
+/// Converts one VXML fragment into blamed, indented output lines.
 pub type Emitter(fragment_classifier, emitter_error) =
   fn(OutputFragment(fragment_classifier, VXML)) ->
     Result(
@@ -196,6 +233,8 @@ pub type Emitter(fragment_classifier, emitter_error) =
       emitter_error,
     )
 
+/// Emits the children of a fragment root inside minimal illustrative HTML
+/// boilerplate.
 pub fn stub_html_emitter(
   fragment: OutputFragment(fragment_classifier, VXML),
 ) -> Result(
@@ -245,6 +284,8 @@ pub fn stub_html_emitter(
   Ok(#(OutputFragment(..fragment, payload: lines), NoFeedback))
 }
 
+/// Emits the children of a fragment root inside minimal illustrative JSX
+/// component boilerplate.
 pub fn stub_jsx_emitter(
   fragment: OutputFragment(fragment_classifier, VXML),
 ) -> Result(
@@ -277,8 +318,7 @@ pub fn stub_jsx_emitter(
   Ok(#(OutputFragment(..fragment, payload: lines), NoFeedback))
 }
 
-// Rendered string fragments -> records of written fragments.
-
+/// Writes one rendered string fragment beneath an output directory.
 pub type Writer(fragment_classifier, writer_error) =
   fn(String, OutputFragment(fragment_classifier, String)) ->
     Result(
@@ -298,6 +338,8 @@ fn output_dir_local_path_printer(
   simplifile.write(path, content)
 }
 
+/// Writes a fragment to `output_dir/fragment.path`, creating parent
+/// directories as needed.
 pub fn default_writer(
   output_dir: String,
   fragment: OutputFragment(fragment_classifier, String),
@@ -319,14 +361,20 @@ pub fn default_writer(
   }
 }
 
+/// Metadata retained after a fragment has been written and its payload is no
+/// longer needed.
 pub type GhostOfOutputFragment(fragment_classifier) {
   GhostOfOutputFragment(classifier: fragment_classifier, path: String)
 }
 
+/// Warnings and errors reported by a prettifier invocation.
 pub type PrettifierFeedback {
   PrettifierFeedback(warnings: List(String), errors: List(String))
 }
 
+/// Optionally checks or rewrites one previously written fragment.
+///
+/// Returning `None` means that the prettifier does not apply to the fragment.
 pub type Prettifier(fragment_classifier) =
   fn(String, GhostOfOutputFragment(fragment_classifier), Option(String)) ->
     Option(PrettifierFeedback)
@@ -378,6 +426,11 @@ fn run_prettier(in: String, path: String, check: Bool) -> PrettifierFeedback {
   PrettifierFeedback(warnings: warnings, errors: errors)
 }
 
+/// Runs Prettier for `.html` and `.tsx` fragments.
+///
+/// Without a bespoke destination it checks the written file. With a
+/// destination it copies the file there and rewrites that copy, unless the
+/// destination resolves to the original output path.
 pub fn default_prettier_prettifier(
   output_dir: String,
   ghost: GhostOfOutputFragment(fragment_classifier),
@@ -437,6 +490,7 @@ pub fn default_prettier_prettifier(
   run_prettier(".", dest_path, check) |> Some
 }
 
+/// A no-op prettifier that applies to every fragment and reports no messages.
 pub fn empty_prettifier(
   _: String,
   _: GhostOfOutputFragment(fragment_classifier),
@@ -468,12 +522,14 @@ pub type Renderer(
   )
 }
 
+/// Determines whether and where renderer output is prettified.
 pub type PrettifierMode {
   PrettifierOff
   PrettifierOverwriteOutputDir
   PrettifierToBespokeDir(Option(String))
 }
 
+/// Required filesystem and prettifier settings for one renderer run.
 pub type RendererParameters {
   RendererParameters(
     input_dir: String,
@@ -482,6 +538,12 @@ pub type RendererParameters {
   )
 }
 
+/// Optional diagnostics, filtering, monitoring, and presentation behavior for
+/// one renderer run.
+///
+/// Begin with `vanilla_options` and use record update syntax for application
+/// defaults. `amend_renderer_options_by_arguments` can then apply parsed
+/// command-line overrides.
 pub type RendererOptions(fragment_classifier) {
   RendererOptions(
     verbose: Bool,
@@ -501,8 +563,8 @@ pub type RendererOptions(fragment_classifier) {
     only_path_key_vals: List(#(String, String, String)),
     monitors: List(Monitor),
     monitor_factories: List(MonitorFactory),
-    output_lines_table_default_comment_columns: Int,
-    output_lines_table_default_blame_columns: Int,
+    vxml_table_default_comment_columns: Int,
+    vxml_table_default_blame_columns: Int,
     dump_assembled_lines: Bool,
     dump_parsed_vxml: Bool,
     dump_filtered_vxml: Bool,
@@ -514,6 +576,7 @@ pub type RendererOptions(fragment_classifier) {
   )
 }
 
+/// Returns quiet renderer options with no filtering or explicit monitors.
 pub fn vanilla_options() -> RendererOptions(fragment_classifier) {
   RendererOptions(
     verbose: False,
@@ -533,8 +596,8 @@ pub fn vanilla_options() -> RendererOptions(fragment_classifier) {
     only_path_key_vals: [],
     monitors: [],
     monitor_factories: [],
-    output_lines_table_default_comment_columns: 30,
-    output_lines_table_default_blame_columns: 48,
+    vxml_table_default_comment_columns: 30,
+    vxml_table_default_blame_columns: 48,
     dump_assembled_lines: False,
     dump_parsed_vxml: False,
     dump_filtered_vxml: False,
@@ -563,6 +626,10 @@ type VxmlMonitorOutput {
   TrackingVerbatim
 }
 
+/// Parsed standard VXML Pipeline options and uninterpreted application options.
+///
+/// Values belonging to keys supplied by the application are grouped in
+/// `user_args`; the library does not assign them semantics.
 pub type ParsedCLIArguments {
   ParsedCLIArguments(
     help: Bool,
@@ -597,6 +664,7 @@ pub type ParsedCLIArguments {
   )
 }
 
+/// Errors produced by the shared command-line and maintenance workflow.
 pub type CLIError {
   CommandLineArgumentError(CommandLineError)
   DotLastCommandReadError(String)
@@ -606,6 +674,7 @@ pub type CLIError {
   ClientSideError(String)
 }
 
+/// Converts a shared command-line error into a user-facing message.
 pub fn cli_error_message(error: CLIError) -> String {
   case error {
     CommandLineArgumentError(error) -> ins(error)
@@ -669,6 +738,7 @@ fn print_cli_usage(header: String, lines: List(String)) -> Nil {
   lines |> string.join("\n") |> io.println
 }
 
+/// Prints the ordinary command-line help followed by `header`.
 pub fn basic_cli_usage(header: String) {
   print_cli_usage(header, [
     "--help",
@@ -696,7 +766,7 @@ pub fn basic_cli_usage(header: String) {
     "",
     "     gleam run -- --track \"lorem ipsum\"",
     "     gleam run -- --track src=img/23.svg +5-2",
-    "     gleam run -- --track \"<> ImageRight\" -track+0 -print+-5 \\",
+    "     gleam run -- --track \"<> ImageRight\" -track+0 -print+-5",
     "",
     "--track-help",
     "  -> print detailed '--track' instructions and examples",
@@ -722,6 +792,7 @@ pub fn basic_cli_usage(header: String) {
   ])
 }
 
+/// Prints detailed help for the `--track` monitor.
 pub fn track_cli_usage(header: String) {
   print_cli_usage(header, [
     "--track <string> [<selector arguments>] [<step ranges>]",
@@ -829,6 +900,7 @@ pub fn track_cli_usage(header: String) {
   ])
 }
 
+/// Prints advanced command-line help followed by `header`.
 pub fn advanced_cli_usage(header: String) {
   print_cli_usage(header, [
     "--table [<name cols> [<param cols> [<outside cols>]]]",
@@ -1109,6 +1181,11 @@ fn decode_dot_last_command(contents: String) -> Result(List(String), CLIError) {
   }
 }
 
+/// Parses standard VXML Pipeline arguments and declared application arguments.
+///
+/// Each string in `user_keys` declares an application-owned `--` option. Its
+/// following values are collected in `ParsedCLIArguments.user_args` until the
+/// next option. The library records those values but does not interpret them.
 pub fn process_command_line_arguments(
   arguments: List(String),
   user_keys: List(String),
@@ -2417,6 +2494,8 @@ fn parse_table_args(
   }
 }
 
+/// Applies parsed input, output, and prettifier arguments to renderer
+/// parameters.
 pub fn amend_renderer_parameters_by_arguments(
   parameters: RendererParameters,
   arguments: ParsedCLIArguments,
@@ -2465,6 +2544,8 @@ fn append_optional_monitor_factory(
   }
 }
 
+/// Applies parsed diagnostic, filtering, monitoring, and dump arguments to
+/// renderer options.
 pub fn amend_renderer_options_by_arguments(
   options: RendererOptions(fragment_classifier),
   arguments: ParsedCLIArguments,
@@ -2518,8 +2599,8 @@ pub fn amend_renderer_options_by_arguments(
       |> append_optional_monitor_factory(
         arguments.vxml_validation_monitor_factory,
       ),
-    output_lines_table_default_comment_columns: options.output_lines_table_default_comment_columns,
-    output_lines_table_default_blame_columns: options.output_lines_table_default_blame_columns,
+    vxml_table_default_comment_columns: options.vxml_table_default_comment_columns,
+    vxml_table_default_blame_columns: options.vxml_table_default_blame_columns,
     dump_assembled_lines: arguments.dump_assembled
       || options.dump_assembled_lines,
     dump_parsed_vxml: arguments.dump_parsed || options.dump_parsed_vxml,
@@ -2979,16 +3060,16 @@ fn make_monitors(
           make_tracking_monitor(
             tracker,
             pipeline,
-            options.output_lines_table_default_blame_columns,
-            options.output_lines_table_default_comment_columns,
+            options.vxml_table_default_blame_columns,
+            options.vxml_table_default_comment_columns,
           )
         DumpMonitorFactory(specs, output) ->
           make_dump_monitor(
             specs,
             output,
             pipeline,
-            options.output_lines_table_default_blame_columns,
-            options.output_lines_table_default_comment_columns,
+            options.vxml_table_default_blame_columns,
+            options.vxml_table_default_comment_columns,
           )
         VxmlValidationMonitorFactory(mode) ->
           case mode {
@@ -3005,10 +3086,12 @@ fn make_monitors(
   Ok(list.append(options.monitors, built))
 }
 
+/// Reports that interactive monitor processing was cancelled at `step_no`.
 pub type UserExit {
   UserExit(step_no: Int)
 }
 
+/// A desugaring error annotated with its pipeline step and desugarer.
 pub type InSituDesugaringError {
   InSituDesugaringError(
     desugarer: Desugarer,
@@ -3018,6 +3101,7 @@ pub type InSituDesugaringError {
   )
 }
 
+/// A desugaring warning annotated with its pipeline step and desugarer.
 pub type InSituDesugaringWarning {
   InSituDesugaringWarning(
     desugarer: Desugarer,
@@ -3027,10 +3111,12 @@ pub type InSituDesugaringWarning {
   )
 }
 
+/// A monitor error annotated with its monitor name and pipeline step.
 pub type MonitorFailure {
   MonitorFailure(monitor_name: String, step_no: Int, message: String)
 }
 
+/// A failure or user cancellation produced while running a pipeline.
 pub type PipelineExecutionError {
   PipelineUserExit(UserExit)
   PipelineDesugaringError(InSituDesugaringError)
@@ -3308,6 +3394,12 @@ fn loop(
   }
 }
 
+/// Runs an ordered VXML transformation pipeline.
+///
+/// Monitors observe the initial VXML at step zero and the result after every
+/// desugarer. The returned durations correspond positionally to the supplied
+/// pipeline. Terminal interaction and long-running-step reports are controlled
+/// by `ux_options`.
 pub fn run_pipeline(
   vxml: VXML,
   pipeline: Pipeline,
@@ -3371,11 +3463,13 @@ fn create_dirs_on_path_to_file(
   |> result.map(fn(_) { Nil })
 }
 
+/// Distinguishes an emitter failure from a writer failure for one fragment.
 pub type EmitterOrWriterError(emitter_error, writer_error) {
   EmitterError(emitter_error)
   WriterError(writer_error)
 }
 
+/// Errors that can stop or partially fail an end-to-end renderer run.
 pub type RendererError(
   assembler_error,
   parser_error,
@@ -3397,6 +3491,18 @@ pub type RendererError(
   )
 }
 
+fn strip_surrounding_double_quotes(value: String) -> String {
+  case string.starts_with(value, "\"") && string.ends_with(value, "\"") {
+    True -> value |> string.drop_start(1) |> string.drop_end(1)
+    False -> value
+  }
+}
+
+/// Runs every configured renderer stage and returns the paths written.
+///
+/// The stages run in assembler, parser, filterer, pipeline, splitter, emitter,
+/// writer, and optional prettifier order. The function owns a trailing blank
+/// line after any renderer output.
 pub fn run_renderer(
   renderer: Renderer(
     assembler_error,
@@ -3506,7 +3612,7 @@ fn run_renderer_(
       io.println("")
       [
         #(" blame:", pr.our_blame_digest(blame)),
-        #(" error: ", ins(c) |> pr.strip_quotes),
+        #(" error: ", ins(c) |> strip_surrounding_double_quotes),
       ]
       |> fb.error_announcement(0, 70, "💥", 2, "/ parser error /")
       |> io.println
@@ -3527,7 +3633,7 @@ fn run_renderer_(
       io.println("  ...filtration error:")
       io.println("")
       [
-        #("", ins(c) |> pr.strip_quotes),
+        #("", ins(c) |> strip_surrounding_double_quotes),
       ]
       |> fb.error_announcement(0, 70, "💥", 2, "/ filtration error /")
       |> io.println

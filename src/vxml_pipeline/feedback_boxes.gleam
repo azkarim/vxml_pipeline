@@ -1,3 +1,5 @@
+//// Fixed-width terminal boxes for structured error messages.
+
 import gleam/int
 import gleam/list
 import gleam/string
@@ -28,6 +30,11 @@ fn dash_banner(title: String, width: Int) -> String {
   <> string.repeat("-", width - string.length(title) - side)
 }
 
+/// Formats labeled error fields inside an emoji-bordered text box.
+///
+/// Field values are wrapped to a practical minimum width. `first_column_min`
+/// and `message_column_min` set lower bounds rather than exact widths; `margin`
+/// is the number of spaces before every output line.
 pub fn error_announcement(
   fields: List(#(String, String)),
   first_column_min: Int,
@@ -86,6 +93,7 @@ pub fn error_announcement(
   |> string.join("\n")
 }
 
+/// Formats the standard mushroom-bordered VXML Pipeline error box.
 pub fn mushroom_error_announcement(
   title: String,
   fields: List(#(String, String)),

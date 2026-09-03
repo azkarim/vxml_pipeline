@@ -1,4 +1,11 @@
 //// Constructors and blame helpers for client-authored desugarers.
+////
+//// A parameterized desugarer normally has two construction phases. `prepare`
+//// validates its public parameter and performs reusable work such as compiling
+//// regular expressions or building dictionaries. It returns an inner
+//// parameter, which `transform` captures in the VXML transformation function.
+//// Preparation occurs once when the pipeline is constructed, not once per
+//// visited VXML node.
 
 import gleam/option
 import gleam/string
@@ -7,6 +14,11 @@ import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError, Desugarer,
 }
 
+/// Constructs a parameterized desugarer with fallible parameter preparation.
+///
+/// The parameter is represented in diagnostic pipeline tables with
+/// `string.inspect`. If `prepare` fails, the resulting desugarer returns that
+/// error whenever the pipeline attempts to run it.
 pub fn desugarer(
   name name: String,
   param param: a,
@@ -22,6 +34,8 @@ pub fn desugarer(
   )
 }
 
+/// Constructs a parameterized desugarer with a caller-supplied diagnostic
+/// representation of its parameter.
 pub fn desugarer_with_stringified_param(
   name name: String,
   param param: a,
@@ -40,6 +54,11 @@ pub fn desugarer_with_stringified_param(
   )
 }
 
+/// Constructs a parameterized `__outside` desugarer.
+///
+/// `outside` is recorded separately in diagnostic pipeline tables and passed
+/// unchanged to `transform`. The constructor validates and prepares only
+/// `param`.
 pub fn desugarer_with_outside(
   name name: String,
   param param: a,
@@ -58,6 +77,10 @@ pub fn desugarer_with_outside(
   )
 }
 
+/// Constructs a parameterized desugarer that requires no fallible preparation.
+///
+/// Use this when the public parameter can be captured directly by the
+/// transform factory.
 pub fn infallible_desugarer(
   name name: String,
   param param: a,
@@ -71,6 +94,7 @@ pub fn infallible_desugarer(
   )
 }
 
+/// Constructs a desugarer that has no public parameter.
 pub fn no_param_desugarer(
   name name: String,
   transform transform: DesugarerTransform,
@@ -83,6 +107,10 @@ pub fn no_param_desugarer(
   )
 }
 
+/// Constructs a parameterless `__outside` desugarer.
+///
+/// The outside-tag list is the desugarer's only constructor input and is shown
+/// in the outside column of diagnostic pipeline tables.
 pub fn no_param_desugarer_with_outside(
   name name: String,
   outside outside: a,
@@ -96,6 +124,8 @@ pub fn no_param_desugarer_with_outside(
   )
 }
 
+/// Creates desugarer blame for a value introduced at `line_no` in the named
+/// desugarer module.
 pub fn blame(name: String, line_no: Int) -> Blame {
   Des([], name, line_no)
 }

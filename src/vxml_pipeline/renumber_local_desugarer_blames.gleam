@@ -1,3 +1,9 @@
+//// Updates generated blame line numbers in a consumer project's local
+//// desugarers.
+////
+//// The command scans `src/desugarers` and recognizes the supported blame
+//// constructor forms used by VXML Pipeline desugarers.
+
 import filepath
 import gleam/int
 import gleam/io
@@ -13,6 +19,7 @@ type Patterns {
   Patterns(desugarer_blame: Regexp, authoring_blame: Regexp, des_blame: Regexp)
 }
 
+/// Runs the renumbering operation as a command-line program.
 pub fn main() -> Nil {
   io.println("")
   case run() {
@@ -21,6 +28,7 @@ pub fn main() -> Nil {
   }
 }
 
+/// Renumbers blames and terminates its output block with a blank line.
 pub fn run() -> Result(Nil, String) {
   case perform() {
     Ok(Nil) -> {
@@ -31,7 +39,7 @@ pub fn run() -> Result(Nil, String) {
   }
 }
 
-/// Renumber local desugarer blames without closing its output block.
+/// Renumbers local desugarer blames without closing its output block.
 pub fn perform() -> Result(Nil, String) {
   case renumber_all() {
     Ok(#(changed, changed_files)) -> {

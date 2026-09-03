@@ -67,7 +67,7 @@ fn inner_param_to_transform(
       on_text: fn(v, state) { #(v, state) },
     )
   nodemap
-  |> n2t.one_to_one_enter_exit_stateful_no_error_nodemap_2_desugarer_transform_with_forbidden(
+  |> n2t.one_to_one_enter_exit_stateful_no_error_nodemap_2_desugarer_transform_outside(
     0,
     outside,
   )

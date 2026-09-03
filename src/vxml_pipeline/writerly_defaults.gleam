@@ -13,11 +13,10 @@ import vxml_pipeline.{
 }
 import writerly as wl
 
-/// Writerly adapter defaults for the generic renderer.
+/// Assembles a Writerly file or directory using the renderer's path selectors.
 ///
-/// This module keeps Writerly-specific assembly, parsing, and emitting
-/// separate from the input-format-agnostic renderer core. It is adapter glue,
-/// not core renderer API.
+/// The returned feedback describes the assembled directory tree. It is printed
+/// only when verbose renderer feedback is enabled.
 pub fn default_writerly_assembler(
   dirpath_or_filepath: String,
   options: RendererOptions(_),
@@ -45,6 +44,7 @@ pub fn default_writerly_assembler(
   Ok(#(assembled, SomeFeedback([feedback])))
 }
 
+/// Parses assembled Writerly lines into exactly one VXML root.
 pub fn default_writerly_parser(
   lines: List(InputLine),
 ) -> Result(#(VXML, Feedback), #(Blame, String)) {
@@ -53,6 +53,10 @@ pub fn default_writerly_parser(
   |> result.map_error(fn(e) { #(e.blame, ins(e)) })
 }
 
+/// Emits one VXML fragment as Writerly output lines without feedback.
+///
+/// Conversion fails when the VXML cannot be represented by Writerly's
+/// serializer contract.
 pub fn default_writerly_emitter(
   fragment: OutputFragment(z, VXML),
 ) -> Result(

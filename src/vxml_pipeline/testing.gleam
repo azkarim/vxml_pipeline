@@ -1,4 +1,9 @@
 //// Test data, collections, and runners for desugarers.
+////
+//// Assertive tests describe a complete VXML transformation as source and
+//// expected VXML strings. A collection binds those cases to one desugarer
+//// constructor. The runner parses both strings, applies the desugarer, and
+//// compares the resulting VXML while presenting blame-aware diagnostics.
 
 import gleam/io
 import gleam/list
@@ -6,27 +11,35 @@ import gleam/string
 import vxml_pipeline/assertive_testing
 import vxml_pipeline/core
 
+/// One executable desugarer test.
 pub type AssertiveTest =
   core.AssertiveTest
 
+/// A named collection of tests belonging to one desugarer.
 pub type AssertiveTestCollection =
   core.AssertiveTestCollection
 
+/// Source, expected output, and parameter data for a parameterized desugarer.
 pub type AssertiveTestData(a) =
   core.AssertiveTestData(a)
 
+/// Source and expected output data for a parameterless desugarer.
 pub type AssertiveTestDataNoParam =
   core.AssertiveTestDataNoParam
 
+/// Test data for a parameterized `__outside` desugarer.
 pub type AssertiveTestDataWithOutside(a) =
   core.AssertiveTestDataWithOutside(a)
 
+/// Test data for a parameterless `__outside` desugarer.
 pub type AssertiveTestDataNoParamWithOutside =
   core.AssertiveTestDataNoParamWithOutside
 
+/// A parse, transformation, or comparison failure from one assertive test.
 pub type AssertiveTestError =
   core.AssertiveTestError
 
+/// Results for all tests belonging to one desugarer.
 pub type AssertiveTestResults {
   AssertiveTestResults(
     desugarer_name: String,
@@ -34,14 +47,17 @@ pub type AssertiveTestResults {
   )
 }
 
+/// Defines one test case for a parameterized desugarer.
 pub fn data(param param: a, source source: String, expected expected: String) {
   core.AssertiveTestData(param, source, expected)
 }
 
+/// Defines one test case for a parameterless desugarer.
 pub fn data_no_param(source source: String, expected expected: String) {
   core.AssertiveTestDataNoParam(source, expected)
 }
 
+/// Defines one test case for a parameterized `__outside` desugarer.
 pub fn data_with_outside(
   param param: a,
   outside outside: List(String),
@@ -51,6 +67,7 @@ pub fn data_with_outside(
   core.AssertiveTestDataWithOutside(param, outside, source, expected)
 }
 
+/// Defines one test case for a parameterless `__outside` desugarer.
 pub fn data_no_param_with_outside(
   outside outside: List(String),
   source source: String,
@@ -59,6 +76,7 @@ pub fn data_no_param_with_outside(
   core.AssertiveTestDataNoParamWithOutside(outside, source, expected)
 }
 
+/// Builds a named test collection for a parameterized desugarer constructor.
 pub fn collection(
   name name: String,
   data data: List(AssertiveTestData(a)),
@@ -67,6 +85,7 @@ pub fn collection(
   core.assertive_test_collection_from_data(name, data, constructor)
 }
 
+/// Builds a named test collection for a parameterless desugarer constructor.
 pub fn collection_no_param(
   name name: String,
   data data: List(AssertiveTestDataNoParam),
@@ -75,6 +94,7 @@ pub fn collection_no_param(
   core.assertive_test_collection_from_data_no_param(name, data, constructor)
 }
 
+/// Builds a named test collection for a parameterized `__outside` constructor.
 pub fn collection_with_outside(
   name name: String,
   data data: List(AssertiveTestDataWithOutside(a)),
@@ -83,6 +103,7 @@ pub fn collection_with_outside(
   core.assertive_test_collection_from_data_with_outside(name, data, constructor)
 }
 
+/// Builds a named test collection for a parameterless `__outside` constructor.
 pub fn collection_no_param_with_outside(
   name name: String,
   data data: List(AssertiveTestDataNoParamWithOutside),
@@ -95,10 +116,12 @@ pub fn collection_no_param_with_outside(
   )
 }
 
+/// Runs one already-constructed assertive test.
 pub fn run_test(name: String, assertive_test: AssertiveTest) {
   assertive_testing.run_assertive_test(name, assertive_test)
 }
 
+/// Runs every test in each supplied collection without printing a summary.
 pub fn run(
   collections: List(AssertiveTestCollection),
 ) -> List(AssertiveTestResults) {
@@ -111,6 +134,7 @@ pub fn run(
   })
 }
 
+/// Returns whether every result in every supplied collection passed.
 pub fn all_passed(results: List(AssertiveTestResults)) -> Bool {
   list.all(results, fn(group) {
     list.all(group.results, fn(result) {

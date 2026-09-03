@@ -1,14 +1,20 @@
+//// Shared encoding and recognition helpers for Writerly handle values.
+
 import gleam/option.{type Option, None, Some}
 import gleam/regexp.{type Regexp, Match}
 import gleam/string
 import vxml_pipeline/handle_escaping
 
+/// Regular-expression fragment matching a Writerly handle name followed by
+/// zero or more decorators.
 pub const decorated_name_pattern = "[\\p{L}\\p{N}\\p{M}_.:'\\-\\^]*[\\p{L}\\p{N}\\p{M}_'\\^](?:#[\\p{L}\\p{N}\\p{M}_:'\\-]+)*"
 
+/// Encodes a handle value as `<<value>>` without otherwise escaping it.
 pub fn encode_value(value: String) -> String {
   "<<" <> value <> ">>"
 }
 
+/// Removes one surrounding `<<` and `>>` pair from an encoded handle value.
 pub fn decode_value(encoded: String) -> Result(String, Nil) {
   case string.starts_with(encoded, "<<") && string.ends_with(encoded, ">>") {
     True ->

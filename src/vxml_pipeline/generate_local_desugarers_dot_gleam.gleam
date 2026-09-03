@@ -1,3 +1,9 @@
+//// Generates the conventional `src/local_desugarers.gleam` registry for a
+//// consumer project's desugarers.
+////
+//// Local desugarers are discovered in `src/desugarers`. The generated module
+//// exposes each constructor and combines every module's assertive tests.
+
 import gleam/int
 import gleam/io
 import gleam/list
@@ -11,6 +17,7 @@ const module_prefix = "desugarers"
 
 const output_path = "src/local_desugarers.gleam"
 
+/// Runs the generator as a command-line program.
 pub fn main() -> Nil {
   io.println("")
   case run() {
@@ -19,6 +26,7 @@ pub fn main() -> Nil {
   }
 }
 
+/// Generates the registry and terminates its output block with a blank line.
 pub fn run() -> Result(Nil, String) {
   case perform() {
     Ok(Nil) -> {
@@ -29,7 +37,7 @@ pub fn run() -> Result(Nil, String) {
   }
 }
 
-/// Generate the local desugarer registry without closing its output block.
+/// Generates the local desugarer registry without closing its output block.
 pub fn perform() -> Result(Nil, String) {
   case generate() {
     Ok(#(output_path, count)) -> {

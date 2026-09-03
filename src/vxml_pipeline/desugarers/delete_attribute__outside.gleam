@@ -15,7 +15,7 @@ pub const name = "delete_attribute__outside"
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
 /// Removes attributes with the specified key outside the
-/// forbidden subtrees.
+/// listed subtrees.
 pub fn constructor(param: Param, outside: List(String)) -> Desugarer {
   authoring.desugarer_with_outside(
     name: name,
@@ -42,7 +42,7 @@ fn inner_param_to_transform(
 ) -> DesugarerTransform {
   let nodemap: n2t.EarlyReturnOneToOneNoErrorNodemap = nodemap(_, inner)
   nodemap
-  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
+  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_outside(
     outside,
   )
 }

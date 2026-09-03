@@ -1,6 +1,6 @@
 import command_line_parser_test
 import counter_desugarers_test
-import delimited_syntax_test
+import delimiter_pipelines_test
 import desugarer_tests
 import expand_emmet_like_attribute_test
 import help_request_test
@@ -18,7 +18,7 @@ import writerly_handles_set_value_test
 pub fn main() {
   command_line_parser_test.main()
   counter_desugarers_test.main()
-  delimited_syntax_test.main()
+  delimiter_pipelines_test.main()
   desugarer_tests.main()
   expand_emmet_like_attribute_test.main()
   help_request_test.main()

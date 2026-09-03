@@ -1,3 +1,9 @@
+//// Blame-preserving word wrapping for VXML text lines.
+////
+//// This module measures Gleam string length, not terminal display width. It
+//// treats spaces as token separators and does not split an individual token
+//// that exceeds the requested width.
+
 import gleam/list
 import gleam/pair
 import gleam/string
@@ -96,6 +102,15 @@ fn rewrap_tokens(
   }
 }
 
+/// Rewraps text lines to fit within `max_line_width`.
+///
+/// `occupied_width_before_text` reserves width on the first output line; later
+/// lines begin at column zero. The returned integer is the occupied width at the
+/// end of the final output line. Each new line receives the blame of its first
+/// token.
+///
+/// Empty first and last input lines are not preserved as protected boundaries;
+/// their spacing can be absorbed into neighboring content.
 pub fn rewrap_lines(
   lines: List(Line),
   occupied_width_before_text: Int,

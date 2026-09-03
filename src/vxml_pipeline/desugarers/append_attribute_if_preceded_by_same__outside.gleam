@@ -13,7 +13,7 @@ pub const name = "append_attribute_if_preceded_by_same__outside"
 // 🏖️🏖️ Desugarer 🏖️🏖️
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
-/// Appends an attribute outside forbidden subtrees when an
+/// Appends an attribute outside the listed subtrees when an
 /// element has the same tag as its immediately preceding
 /// sibling.
 pub fn constructor(param: Param, outside: List(String)) -> Desugarer {
@@ -52,7 +52,7 @@ fn inner_param_to_transform(
     nodemap(node, prev_siblings, inner)
   }
   nodemap
-  |> n2t.fancy_one_to_one_nodemap_2_desugarer_transform_with_forbidden(outside)
+  |> n2t.fancy_one_to_one_nodemap_2_desugarer_transform_outside(outside)
 }
 
 fn nodemap(

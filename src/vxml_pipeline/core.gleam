@@ -1,4 +1,10 @@
 //// Core desugarer and pipeline types, errors, warnings, and VXML utilities.
+////
+//// This module is intentionally a broad toolbox for both bundled and
+//// client-authored desugarers. Its central types are `Desugarer`, `Pipeline`,
+//// `DesugaringError`, and `DesugaringWarning`; the remaining functions provide
+//// common VXML predicates, traversal helpers, collection operations, and
+//// string-processing conveniences.
 
 import either_or as eo
 import gleam/dict.{type Dict}
@@ -17,6 +23,7 @@ import vxml/blame.{type Blame} as bl
 // Traffic Light for early returns
 // ************************************************************
 
+/// Controls whether an early-return nodemap descends into the current subtree.
 pub type TrafficLight {
   Continue
   GoBack
@@ -25,6 +32,7 @@ pub type TrafficLight {
 // ************************************************************
 // Helper Types
 // ************************************************************
+/// A VXML predicate that also receives ancestors and sibling context.
 pub type ContextualVXMLCondition =
   fn(VXML, List(VXML), List(VXML), List(VXML), List(VXML)) -> Bool
 
@@ -32,6 +40,7 @@ pub type ContextualVXMLCondition =
 // LatexDelimiterPair, LatexDelimiterSingleton
 // ************************************************************
 
+/// A supported pair of LaTeX math delimiters.
 pub type LatexDelimiterPair {
   DoubleDollar
   SingleDollar
@@ -46,6 +55,7 @@ pub type LatexDelimiterPair {
   BeginEndEnvironment(name: String)
 }
 
+/// One opening, closing, or symmetric LaTeX math delimiter.
 pub type LatexDelimiterSingleton {
   DoubleDollarSingleton
   SingleDollarSingleton
@@ -61,18 +71,22 @@ pub type LatexDelimiterSingleton {
   EndEnvironment(name: String)
 }
 
+/// Returns the standard inline-math delimiter pairs recognized by the package.
 pub fn latex_inline_delimiters() -> List(LatexDelimiterPair) {
   [SingleDollar, BackslashParenthesis]
 }
 
+/// Returns display-math pairs whose delimiters may be removed before output.
 pub fn latex_strippable_display_delimiters() -> List(LatexDelimiterPair) {
   [DoubleDollar, BackslashSquareBracket]
 }
 
+/// Returns every built-in delimiter pair whose delimiters may be stripped.
 pub fn latex_strippable_delimiter_pairs() -> List(LatexDelimiterPair) {
   [DoubleDollar, SingleDollar, BackslashParenthesis, BackslashSquareBracket]
 }
 
+/// Returns the literal opening and closing strings for one delimiter pair.
 pub fn opening_and_closing_string_for_pair(
   pair: LatexDelimiterPair,
 ) -> #(String, String) {
@@ -90,6 +104,7 @@ pub fn opening_and_closing_string_for_pair(
   }
 }
 
+/// Splits one delimiter pair into its opening and closing singleton variants.
 pub fn opening_and_closing_singletons_for_pair(
   pair: LatexDelimiterPair,
 ) -> #(LatexDelimiterSingleton, LatexDelimiterSingleton) {
@@ -110,6 +125,7 @@ pub fn opening_and_closing_singletons_for_pair(
   }
 }
 
+/// Returns separate lists of opening and closing strings for delimiter pairs.
 pub fn opening_and_closing_delimiter_strings(
   delimiters: List(LatexDelimiterPair),
 ) -> #(List(String), List(String)) {
@@ -2395,14 +2411,17 @@ pub fn assertive_test_collection_from_data_with_outside(
 // Desugarer types
 // ************************************************************
 
+/// A blame-bearing failure returned by a desugarer transform.
 pub type DesugaringError {
   DesugaringError(blame: Blame, message: String)
 }
 
+/// A blame-bearing nonfatal diagnostic returned by a desugarer transform.
 pub type DesugaringWarning {
   DesugaringWarning(blame: Blame, message: String)
 }
 
+/// The executable VXML transformation carried by a `Desugarer`.
 pub type DesugarerTransform =
   fn(VXML) -> Result(#(VXML, List(DesugaringWarning)), DesugaringError)
 

@@ -58,7 +58,7 @@ fn inner_param_to_transform(
 ) -> DesugarerTransform {
   let nodemap: n2t.EarlyReturnOneToOneNoErrorNodemap = nodemap(_, inner)
   nodemap
-  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
+  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_outside(
     outside,
   )
 }

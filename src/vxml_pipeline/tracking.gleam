@@ -1,4 +1,10 @@
 //// Serializes, selects, and displays VXML for pipeline tracking monitors.
+////
+//// Tracking first serializes VXML into `SLine` values so selectors can retain
+//// tree structure and blame while marking lines for display. A `LineSelector`
+//// selects individual lines; a `Selector` can inspect and transform the whole
+//// serialized list, allowing selection to expand to ancestors or neighboring
+//// lines. Rendering functions then produce either tables or verbatim VXML.
 
 import gleam/int
 import gleam/list
@@ -13,18 +19,15 @@ import vxml_pipeline/core.{pour}
 // tracking-related part 1: types
 // ************************************************************
 
-/// A VXML instance is serialized into a list of SLine for the
-/// purposes of tracking (see "--track" command line option);
-/// each SLine (for "Selected (or not) Line") is one of four
-/// variants:
+/// One structural line in VXML serialized for selection and tracking.
 ///
-/// - VSLine: a tag "<> ..." of a V-node
-/// - ASLine: a key-attr pair line "key=val" of a V-node
-/// - TSLine: the caret "<>" that marks the start of a T-node
-/// - LSLine: a content-line for a T-node
+/// - `VSLine` represents the tag line of a V-node.
+/// - `ASLine` represents one attribute line of a V-node.
+/// - `TSLine` represents the `<>` opening line of a T-node.
+/// - `LSLine` represents one content line of a T-node.
 ///
-/// Each SLine comes with a selection status, given by its 'selected'
-/// field.
+/// Every variant retains indentation, blame, serialized content, and selection
+/// status. V- and attribute lines additionally retain their parsed fields.
 pub type SLine {
   VSLine(
     blame: Blame,
@@ -45,15 +48,21 @@ pub type SLine {
   LSLine(blame: Blame, indent: Int, content: String, selected: SelectionStatus)
 }
 
+/// Whether and why a serialized VXML line is included in tracked output.
+///
+/// `OG` marks a direct selector match. `Bystander` marks structural or nearby
+/// context added around a match.
 pub type SelectionStatus {
   NotSelected
   OG
   Bystander
 }
 
+/// Selects one serialized VXML line.
 pub type LineSelector =
   fn(SLine) -> SelectionStatus
 
+/// Selects or expands selections across a complete serialized VXML tree.
 pub type Selector =
   fn(List(SLine)) -> List(SLine)
 
@@ -117,6 +126,7 @@ fn vxml_to_s_lines_internal(
   }
 }
 
+/// Serializes one VXML tree into initially unselected structural lines.
 pub fn vxml_to_s_lines(vxml: VXML) -> List(SLine) {
   vxml_to_s_lines_internal([], vxml, 0)
   |> list.reverse
@@ -126,6 +136,7 @@ pub fn vxml_to_s_lines(vxml: VXML) -> List(SLine) {
 // tracking-related part 3: creating an initial selection from a LineSelector
 // ************************************************************
 
+/// Replaces one line's selection status with the result of `line_selector`.
 pub fn apply_line_selector_to_line(
   line: SLine,
   line_selector: LineSelector,
@@ -139,6 +150,7 @@ pub fn apply_line_selector_to_line(
   }
 }
 
+/// Lifts a line-level selector into a whole-tree selector.
 pub fn line_selector_to_selector(line_selector: LineSelector) -> Selector {
   list.map(_, apply_line_selector_to_line(_, line_selector))
 }
@@ -199,18 +211,26 @@ fn extend_selection_down_no_reverse(
   |> pair.second
 }
 
+/// Adds up to `amt` following lines as bystander context around every direct
+/// match.
 pub fn extend_selection_down(lines: List(SLine), amt: Int) -> List(SLine) {
   lines
   |> extend_selection_down_no_reverse(amt)
   |> list.reverse
 }
 
+/// Adds up to `amt` preceding lines as bystander context around every direct
+/// match.
 pub fn extend_selection_up(lines: List(SLine), amt: Int) -> List(SLine) {
   lines
   |> list.reverse
   |> extend_selection_down_no_reverse(amt)
 }
 
+/// Adds structural ancestor context around selected lines.
+///
+/// The boolean arguments additionally include elder sibling tags, ancestor
+/// attributes, and elder-sibling attributes respectively.
 pub fn extend_selection_to_ancestors(
   lines: List(SLine),
   with_elder_siblings w1: Bool,
@@ -243,6 +263,7 @@ pub fn extend_selection_to_ancestors(
   |> pair.second
 }
 
+/// Composes a selector with upward bystander expansion.
 pub fn extend_selector_up(f: Selector, amt: Int) -> Selector {
   fn(lines) {
     lines
@@ -251,6 +272,7 @@ pub fn extend_selector_up(f: Selector, amt: Int) -> Selector {
   }
 }
 
+/// Composes a selector with downward bystander expansion.
 pub fn extend_selector_down(f: Selector, amt: Int) -> Selector {
   fn(lines) {
     lines
@@ -259,6 +281,7 @@ pub fn extend_selector_down(f: Selector, amt: Int) -> Selector {
   }
 }
 
+/// Composes a selector with structural ancestor expansion.
 pub fn extend_selector_to_ancestors(
   f: Selector,
   with_elder_siblings w1: Bool,
@@ -294,6 +317,8 @@ fn or_two_lists_of_s_lines(l1: List(SLine), l2: List(SLine)) -> List(SLine) {
   list.map2(l1, l2, or_a_pair_of_s_lines)
 }
 
+/// Combines two selectors, preserving the strongest selection status assigned
+/// to each line.
 pub fn or_selectors(s1: Selector, s2: Selector) -> Selector {
   fn(lines) {
     let l1 = lines |> s1

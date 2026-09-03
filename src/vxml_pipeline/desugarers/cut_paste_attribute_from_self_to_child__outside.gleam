@@ -16,7 +16,7 @@ pub const name = "cut_paste_attribute_from_self_to_child__outside"
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
 /// Moves the first matching parent attribute onto every
-/// matching child outside forbidden subtrees.
+/// matching child outside the listed subtrees.
 pub fn constructor(param: Param, outside: List(String)) -> Desugarer {
   authoring.desugarer_with_outside(
     name: name,
@@ -51,7 +51,7 @@ fn inner_param_to_transform(
 ) -> DesugarerTransform {
   let nodemap: n2t.EarlyReturnOneToOneNoErrorNodemap = nodemap(_, inner)
   nodemap
-  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
+  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_outside(
     outside,
   )
 }

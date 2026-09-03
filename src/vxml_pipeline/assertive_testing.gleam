@@ -1,3 +1,9 @@
+//// Internal execution and terminal presentation for assertive desugarer tests.
+////
+//// Client code should normally use `vxml_pipeline/testing`, which exposes the
+//// test-data constructors and stable runners without these presentation
+//// internals.
+
 import colours
 import gleam/io
 import gleam/list

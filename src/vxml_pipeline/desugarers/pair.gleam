@@ -44,7 +44,7 @@ type InnerParam {
     opening_tag: String,
     closing_tag: String,
     enclosing_tag: String,
-    unbridgeable_tags: List(String),
+    unbridgeable: List(String),
   )
 }
 
@@ -67,7 +67,7 @@ fn nodemap(node: VXML, inner: InnerParam) -> VXML {
           inner.opening_tag,
           inner.closing_tag,
           inner.enclosing_tag,
-          inner.unbridgeable_tags,
+          inner.unbridgeable,
           [],
           option.None,
           [],

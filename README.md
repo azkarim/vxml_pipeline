@@ -73,8 +73,8 @@ group of related transformations with one constructor call and, where the
 implementation permits, one tree traversal.
 
 A desugarer whose name ends in `__outside` has a constructor with a second
-argument: a list of tag names that identify forbidden subtrees. The desugarer
-does not operate inside subtrees rooted at any of those tags.
+argument named `outside`: a list of tag names identifying subtrees that the
+desugarer leaves untouched.
 
 The variants can be combined, as in `name__batch__outside`, but the library
 does not provide every possible variant of every desugarer. `__batch`,
@@ -408,9 +408,9 @@ contents. The corresponding command-line form is
 
 ## Renderer parameters and options
 
-`RendererParameters` contains values required for a run. After parsing command-line
-arguments, construct the application's defaults and amend them with any standard
-options supplied by the user:
+`RendererParameters` contains values required for a run. After parsing
+command-line arguments, construct the application's defaults and amend them
+with any standard options supplied by the user:
 
 ```gleam
 let parameters =
@@ -432,8 +432,8 @@ let options =
     ..vp.vanilla_options(),
     artifacts: True,
     profiling_table: True,
-    output_lines_table_default_blame_columns: 50,
-    output_lines_table_default_comment_columns: 0,
+    vxml_table_default_blame_columns: 50,
+    vxml_table_default_comment_columns: 0,
   )
   |> vp.amend_renderer_options_by_arguments(arguments)
 ```
@@ -675,7 +675,7 @@ directory.
   helpers, and lower-level utilities used by desugarers.
 - `vxml_pipeline/desugarers` — generated registry of reusable desugarer
   constructors.
-- `vxml_pipeline/delimited_syntax` — reusable multi-desugarer fragments for
+- `vxml_pipeline/delimiter_pipelines` — reusable multi-desugarer fragments for
   delimiters, inline markup, and link parsing.
 - `vxml_pipeline/split_replacement` — literal and regular-expression splitting
   rules that replace matched segments with VXML.

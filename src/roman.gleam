@@ -1,3 +1,5 @@
+//// Internal conversion helpers for lowercase Roman numerals.
+
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -94,7 +96,7 @@ fn roman_to_int_recursive(
   }
 }
 
-/// Converts roman ( list of numerals ) to int value
+/// Converts a sequence of Roman numeral symbols to its integer value.
 @internal
 pub fn roman_to_int(roman: Roman) -> Int {
   roman
@@ -149,7 +151,7 @@ fn dec_until_zero(val: Int, numerals: List(Numeral)) -> #(Int, List(Numeral)) {
   }
 }
 
-/// Converts int to roman ( list of numerals )
+/// Converts a positive integer to Roman numeral symbols.
 @internal
 pub fn int_to_roman(val: Int) -> Option(Roman) {
   case int.compare(val, 0) {
@@ -165,6 +167,7 @@ pub fn int_to_roman(val: Int) -> Option(Roman) {
   }
 }
 
+/// Serializes Roman numeral symbols as lowercase text.
 @internal
 pub fn roman_to_string(numerals: Roman) -> String {
   case numerals {

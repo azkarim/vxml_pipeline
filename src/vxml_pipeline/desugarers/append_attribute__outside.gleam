@@ -15,7 +15,7 @@ pub const name = "append_attribute__outside"
 // 🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️🏖️️️️️🏖️
 
 /// Appends an attribute to matching elements outside the
-/// forbidden subtrees, returning from each subtree once the
+/// listed subtrees, returning from each subtree once the
 /// attribute has been added.
 pub fn constructor(param: Param, outside: List(String)) -> Desugarer {
   authoring.desugarer_with_outside(
@@ -52,7 +52,7 @@ fn inner_param_to_transform(
 ) -> DesugarerTransform {
   let nodemap: n2t.EarlyReturnOneToOneNoErrorNodemap = nodemap(_, inner)
   nodemap
-  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
+  |> n2t.early_return_one_to_one_no_error_nodemap_2_desugarer_transform_outside(
     outside,
   )
 }

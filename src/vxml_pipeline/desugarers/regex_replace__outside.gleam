@@ -45,9 +45,7 @@ fn inner_param_to_transform(
 ) -> DesugarerTransform {
   let nodemap: n2t.OneToOneNoErrorNodemap = engine.nodemap(_, inner)
   nodemap
-  |> n2t.one_to_one_no_error_nodemap_2_desugarer_transform_with_forbidden(
-    outside,
-  )
+  |> n2t.one_to_one_no_error_nodemap_2_desugarer_transform_outside(outside)
 }
 
 // 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊
