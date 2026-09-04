@@ -57,6 +57,8 @@ fn complete_handle_lifecycle_test() {
     <> a
       href=#_1_h.a.i_
       <>
-        'Equation 1'",
+        'Equation 1'
+    <>
+      ''",
   ))
 }

@@ -285,7 +285,6 @@ fn process_line(
     |> handle_text_parts("", inner.handle_candidates_regexp)
     |> list.try_fold(#([], [], []), fn(acc, part) {
       case part {
-        PlainText("") -> Ok(acc)
         PlainText(text) ->
           Ok(#([T(blame, [Line(blame, text)]), ..acc.0], acc.1, acc.2))
         ActiveHandle(handle) -> {
@@ -787,6 +786,29 @@ pub fn constructor(param: Param) -> Desugarer {
 
 fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
   [
+    testing.data(
+      param: #("path", "a", "a", [], [], ["a"], ["Math", "MathBlock"]),
+      source: "
+        <> GrandWrapper
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'before'
+                ''
+                'after'
+      ",
+      expected: "
+        <> GrandWrapper
+          <> root
+            <> Chapter
+              path=./ch1.html
+              <>
+                'before'
+                ''
+                'after'
+      ",
+    ),
     testing.data(
       param: #(
         "path",
@@ -1344,6 +1366,8 @@ fn assertive_tests_data() -> List(testing.AssertiveTestData(Param)) {
                 href=#id
                 <>
                   'value'
+              <>
+                ''
       ",
     ),
     testing.data(
