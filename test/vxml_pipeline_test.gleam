@@ -5,6 +5,7 @@ import desugarer_tests
 import expand_emmet_like_attribute_test
 import help_request_test
 import line_wrap_test
+import link_punctuation_test
 import monitor_test
 import public_facades_test
 import renderer_integration_test
@@ -26,6 +27,7 @@ pub fn main() {
   writerly_handles_grand_wrapper_substitute_test.main()
   writerly_handles_integration_test.main()
   writerly_handles_set_value_test.main()
+  link_punctuation_test.main()
   line_wrap_test.main()
   monitor_test.main()
   public_facades_test.main()

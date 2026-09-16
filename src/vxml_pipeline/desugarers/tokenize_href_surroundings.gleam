@@ -7,6 +7,7 @@ import vxml_pipeline/authoring
 import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError,
 }
+import vxml_pipeline/link_tokenization
 import vxml_pipeline/nodemaps_2_transform as n2t
 import vxml_pipeline/testing
 
@@ -29,9 +30,8 @@ pub fn constructor() -> Desugarer {
 const had_href_child = Attr(bl.Des([], name, 29), "had_href_child", "true")
 
 fn param_to_inner_param(_param: Param) -> Result(InnerParam, DesugaringError) {
-  let opening_parenthesis_splitter: Splitter =
-    splitter.new([" ", "(", "[", "—"])
-  Ok(opening_parenthesis_splitter)
+  let punctuation_splitter: Splitter = link_tokenization.new_splitter()
+  Ok(punctuation_splitter)
 }
 
 fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
@@ -40,7 +40,7 @@ fn inner_param_to_transform(inner: InnerParam) -> DesugarerTransform {
   |> n2t.one_to_one_no_error_nodemap_2_desugarer_transform()
 }
 
-fn nodemap(opening_parenthesis_splitter: Splitter, vxml: VXML) -> VXML {
+fn nodemap(punctuation_splitter: Splitter, vxml: VXML) -> VXML {
   case vxml {
     T(_, _) -> vxml
     V(_, _, attrs, children) -> {
@@ -51,7 +51,7 @@ fn nodemap(opening_parenthesis_splitter: Splitter, vxml: VXML) -> VXML {
           let children =
             list.flat_map(children, fn(vxml) {
               tokenize_if_t_or_has_href_attr_and_recurse(
-                opening_parenthesis_splitter,
+                punctuation_splitter,
                 vxml,
               )
             })
@@ -63,11 +63,11 @@ fn nodemap(opening_parenthesis_splitter: Splitter, vxml: VXML) -> VXML {
 }
 
 fn tokenize_if_t_or_has_href_attr_and_recurse(
-  opening_parenthesis_splitter: Splitter,
+  punctuation_splitter: Splitter,
   vxml: VXML,
 ) -> List(VXML) {
   case vxml {
-    T(_, _) -> tokenize_t(opening_parenthesis_splitter, vxml)
+    T(_, _) -> tokenize_t(punctuation_splitter, vxml)
     V(_, _, attrs, children) ->
       case core.attrs_have_key(attrs, "href") {
         True -> [
@@ -75,7 +75,7 @@ fn tokenize_if_t_or_has_href_attr_and_recurse(
             ..vxml,
             children: list.flat_map(children, fn(vxml) {
               tokenize_if_t_or_has_href_attr_and_recurse(
-                opening_parenthesis_splitter,
+                punctuation_splitter,
                 vxml,
               )
             }),
@@ -86,19 +86,11 @@ fn tokenize_if_t_or_has_href_attr_and_recurse(
   }
 }
 
-fn tokenize_t(
-  opening_parenthesis_splitter: Splitter,
-  vxml: VXML,
-) -> List(VXML) {
+fn tokenize_t(punctuation_splitter: Splitter, vxml: VXML) -> List(VXML) {
   let assert T(blame, lines) = vxml
   lines
   |> list.index_map(fn(line, i) {
-    tokenize_string_acc(
-      opening_parenthesis_splitter,
-      [],
-      line.blame,
-      line.content,
-    )
+    tokenize_string_acc(punctuation_splitter, [], line.blame, line.content)
     |> list.prepend(case i == 0 {
       True -> start_node(line.blame)
       False -> newline_node(line.blame)
@@ -109,12 +101,12 @@ fn tokenize_t(
 }
 
 fn tokenize_string_acc(
-  opening_parenthesis_splitter: Splitter,
+  punctuation_splitter: Splitter,
   past_tokens: List(VXML),
   current_blame: Blame,
   leftover: String,
 ) -> List(VXML) {
-  case splitter.split(opening_parenthesis_splitter, leftover) {
+  case splitter.split(punctuation_splitter, leftover) {
     #(_, "", _) ->
       case leftover == "" {
         True -> past_tokens |> list.reverse
@@ -123,14 +115,14 @@ fn tokenize_string_acc(
       }
     #("", " ", after) ->
       tokenize_string_acc(
-        opening_parenthesis_splitter,
+        punctuation_splitter,
         [space_node(current_blame), ..past_tokens],
         bl.advance(current_blame, 1),
         after,
       )
     #(before, " ", after) ->
       tokenize_string_acc(
-        opening_parenthesis_splitter,
+        punctuation_splitter,
         [
           space_node(current_blame),
           word_node(current_blame, before),
@@ -141,7 +133,7 @@ fn tokenize_string_acc(
       )
     #("", non_space_puncutation, after) -> {
       tokenize_string_acc(
-        opening_parenthesis_splitter,
+        punctuation_splitter,
         [word_node(current_blame, non_space_puncutation), ..past_tokens],
         bl.advance(current_blame, 1),
         after,
@@ -149,10 +141,13 @@ fn tokenize_string_acc(
     }
     #(before, non_space_punctuation, after) ->
       tokenize_string_acc(
-        opening_parenthesis_splitter,
+        punctuation_splitter,
         [
+          word_node(
+            bl.advance(current_blame, string.length(before)),
+            non_space_punctuation,
+          ),
           word_node(current_blame, before),
-          word_node(current_blame, non_space_punctuation),
           ..past_tokens
         ],
         bl.advance(current_blame, string.length(before) + 1),

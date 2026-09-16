@@ -13,6 +13,7 @@ import vxml_pipeline/core.{
   type Desugarer, type DesugarerTransform, type DesugaringError, Desugarer,
   DesugaringError,
 }
+import vxml_pipeline/link_tokenization
 import vxml_pipeline/nodemaps_2_transform as n2t
 
 type PatternToken {
@@ -180,7 +181,10 @@ fn generate_replacement_vxml_internal(
             V(
               blame,
               tag,
-              attrs |> core.attrs_append_classes(blame, classes),
+              case classes {
+                "" -> attrs
+                _ -> core.attrs_append_classes(attrs, blame, classes)
+              },
               generate_replacement_vxml_internal(
                 [],
                 internal_pattern,
@@ -426,13 +430,13 @@ fn end_node(blame: Blame) {
 }
 
 fn tokenize_string_acc(
-  opening_punctuation_splitter: Splitter,
+  punctuation_splitter: Splitter,
   desugarer_name: String,
   past_tokens: List(VXML),
   current_blame: Blame,
   leftover: String,
 ) -> List(VXML) {
-  case splitter.split(opening_punctuation_splitter, leftover) {
+  case splitter.split(punctuation_splitter, leftover) {
     #(_, "", _) ->
       case leftover == "" {
         True -> past_tokens |> list.reverse
@@ -442,7 +446,7 @@ fn tokenize_string_acc(
       }
     #("", " ", after) ->
       tokenize_string_acc(
-        opening_punctuation_splitter,
+        punctuation_splitter,
         desugarer_name,
         [space_node(current_blame), ..past_tokens],
         bl.advance(current_blame, 1),
@@ -450,7 +454,7 @@ fn tokenize_string_acc(
       )
     #(before, " ", after) ->
       tokenize_string_acc(
-        opening_punctuation_splitter,
+        punctuation_splitter,
         desugarer_name,
         [
           space_node(current_blame),
@@ -462,7 +466,7 @@ fn tokenize_string_acc(
       )
     #("", non_space_punctuation, after) ->
       tokenize_string_acc(
-        opening_punctuation_splitter,
+        punctuation_splitter,
         desugarer_name,
         [
           word_node(current_blame, desugarer_name, non_space_punctuation),
@@ -473,11 +477,15 @@ fn tokenize_string_acc(
       )
     #(before, non_space_punctuation, after) ->
       tokenize_string_acc(
-        opening_punctuation_splitter,
+        punctuation_splitter,
         desugarer_name,
         [
+          word_node(
+            bl.advance(current_blame, string.length(before)),
+            desugarer_name,
+            non_space_punctuation,
+          ),
           word_node(current_blame, desugarer_name, before),
-          word_node(current_blame, desugarer_name, non_space_punctuation),
           ..past_tokens
         ],
         bl.advance(current_blame, string.length(before) + 1),
@@ -487,7 +495,7 @@ fn tokenize_string_acc(
 }
 
 fn tokenize_t(
-  opening_punctuation_splitter: Splitter,
+  punctuation_splitter: Splitter,
   desugarer_name: String,
   vxml: VXML,
 ) -> List(VXML) {
@@ -495,7 +503,7 @@ fn tokenize_t(
   lines
   |> list.index_map(fn(line, i) {
     tokenize_string_acc(
-      opening_punctuation_splitter,
+      punctuation_splitter,
       desugarer_name,
       [],
       line.blame,
@@ -511,12 +519,12 @@ fn tokenize_t(
 }
 
 fn tokenize_if_t_or_has_href_tag_recursive(
-  opening_punctuation_splitter: Splitter,
+  punctuation_splitter: Splitter,
   desugarer_name: String,
   vxml: VXML,
 ) -> List(VXML) {
   case vxml {
-    T(_, _) -> tokenize_t(opening_punctuation_splitter, desugarer_name, vxml)
+    T(_, _) -> tokenize_t(punctuation_splitter, desugarer_name, vxml)
     V(_, _, _, children) ->
       case core.v_has_attr_with_key(vxml, "href") {
         True -> [
@@ -524,7 +532,7 @@ fn tokenize_if_t_or_has_href_tag_recursive(
             ..vxml,
             children: list.flat_map(children, fn(vxml) {
               tokenize_if_t_or_has_href_tag_recursive(
-                opening_punctuation_splitter,
+                punctuation_splitter,
                 desugarer_name,
                 vxml,
               )
@@ -541,7 +549,7 @@ fn tokenize_if_t_or_has_href_tag_recursive(
 // }
 
 fn tokenize_maybe(
-  opening_punctuation_splitter: Splitter,
+  punctuation_splitter: Splitter,
   desugarer_name: String,
   children: List(VXML),
 ) -> Option(List(VXML)) {
@@ -550,7 +558,7 @@ fn tokenize_maybe(
       children
       |> list.flat_map(fn(vxml) {
         tokenize_if_t_or_has_href_tag_recursive(
-          opening_punctuation_splitter,
+          punctuation_splitter,
           desugarer_name,
           vxml,
         )
@@ -581,7 +589,7 @@ fn nodemap(vxml: VXML, inner: InnerParam) -> VXML {
         RawInput -> {
           use atomized <- on.eager_none_some(
             tokenize_maybe(
-              inner.opening_punctuation_splitter,
+              inner.punctuation_splitter,
               inner.desugarer_name,
               children,
             ),
@@ -803,54 +811,31 @@ fn check_target_pattern_substitutable_for_source_pattern(
   Nil
 }
 
-fn pseudoword_to_pattern_tokens(
-  word: String,
-  re: regexp.Regexp,
-) -> List(PatternToken) {
-  // this is what it means to be a pseudoword:
-  let assert True = word == " " || { !string.contains(word, " ") && word != "" }
-
-  // case 1: a space
-  use <- on.true_false(word == " ", fn() { [Space] })
-
-  // case 2: an ordinary word
-  use <- on.false_true(regexp.check(re, word), fn() { [Word(word)] })
-
-  // case 3: a word containing 'ContentVar' patterns
-  regexp.split(re, word)
-  |> list.index_map(
-    // example of splits for _1_._2_ ==> ["", "_1_", ".", "_2_", ""]
-    fn(x, i) {
-      case i % 2 == 0 {
-        True ->
-          case x {
-            "" -> None
-            _ -> Some(Word(x))
-          }
-        False -> {
-          let assert True =
-            string.starts_with(x, "_")
-            && string.ends_with(x, "_")
-            && string.length(x) > 2
-          let assert Ok(x) =
-            x |> string.drop_end(1) |> string.drop_start(1) |> int.parse
-          Some(ContentVar(x))
-        }
-      }
-    },
-  )
-  |> option.values
-}
-
 fn text_to_link_pattern(
   content: String,
   re: regexp.Regexp,
 ) -> Result(LinkPattern, DesugaringError) {
-  content
-  |> string.split(" ")
-  |> list.intersperse(" ")
-  |> list.filter(fn(s) { s != "" })
-  |> list.flat_map(pseudoword_to_pattern_tokens(_, re))
+  // Recognize placeholders before splitting punctuation: `_0_` must remain
+  // a content variable, while literal underscores are ordinary punctuation.
+  regexp.split(re, content)
+  |> list.index_map(fn(part, i) {
+    case i % 2 == 0 {
+      True ->
+        link_tokenization.literal_tokens(part)
+        |> list.map(fn(token) {
+          case token {
+            " " -> Space
+            _ -> Word(token)
+          }
+        })
+      False -> {
+        let assert Ok(index) =
+          part |> string.drop_end(1) |> string.drop_start(1) |> int.parse
+        [ContentVar(index)]
+      }
+    }
+  })
+  |> list.flatten
   |> Ok
 }
 
@@ -1036,8 +1021,7 @@ fn param_to_inner_param(
   input_mode: InputMode,
   desugarer_name: String,
 ) -> Result(InnerParam, DesugaringError) {
-  let opening_punctuation_splitter: Splitter =
-    splitter.new([" ", "(", "[", "—"])
+  let punctuation_splitter: Splitter = link_tokenization.new_splitter()
   use pairs <- on.ok(
     list.try_map(param, fn(p) {
       use #(pattern1, pattern2) <- on.ok(string_pair_to_link_pattern_pair(p))
@@ -1097,7 +1081,7 @@ fn param_to_inner_param(
       Ok(#(pattern1, pattern2))
     }),
   )
-  Ok(InnerParam(pairs, opening_punctuation_splitter, input_mode, desugarer_name))
+  Ok(InnerParam(pairs, punctuation_splitter, input_mode, desugarer_name))
 }
 
 @internal
@@ -1116,7 +1100,7 @@ pub type Param =
 type InnerParam {
   InnerParam(
     pattern_pairs: List(#(LinkPattern, LinkPattern)),
-    opening_punctuation_splitter: Splitter,
+    punctuation_splitter: Splitter,
     input_mode: InputMode,
     desugarer_name: String,
   )
@@ -1182,7 +1166,6 @@ fn assertive_tests_data() -> List(core.AssertiveTestData(Param)) {
                 'see '
               <> a
                 href=some-url
-                class=
                 <>
                   'here link'
       ",
@@ -1204,7 +1187,6 @@ fn assertive_tests_data() -> List(core.AssertiveTestData(Param)) {
                 '('
               <> a
                 href=some-url
-                class=
                 <>
                   'here link'
       ",
@@ -1226,7 +1208,6 @@ fn assertive_tests_data() -> List(core.AssertiveTestData(Param)) {
                 '['
               <> a
                 href=some-url
-                class=
                 <>
                   'note link'
       ",
@@ -1257,14 +1238,12 @@ fn assertive_tests_data() -> List(core.AssertiveTestData(Param)) {
                 'see '
               <> a
                 href=url1
-                class=
                 <>
                   'go here'
               <>
                 ', and '
               <> b
                 href=url2
-                class=
                 <>
                   'come there'
       ",
@@ -1286,7 +1265,6 @@ fn assertive_tests_data() -> List(core.AssertiveTestData(Param)) {
                 '('
               <> a
                 href=some-url
-                class=
                 <>
                   'note link'
       ",
