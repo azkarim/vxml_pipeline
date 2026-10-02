@@ -631,6 +631,12 @@ gleam run -m desugarer_tests -- rename
 
 ## Local desugarers in an application
 
+For a complete application structure, see the
+[`examples/starter_project`](examples/starter_project) project. It contains a
+Writerly formatter, HTML and LaTeX renderers, counters, handles, root metadata,
+two tested local desugarers, and the standard command-line maintenance flow.
+Its small sample document has two sections and an appendix.
+
 An application can keep private desugarers in this fixed layout:
 
 ```text

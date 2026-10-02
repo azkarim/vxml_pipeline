@@ -28,6 +28,10 @@ pub fn main() {
   assert_parses(["--track", "needle", "+0+30"])
   assert_parses(["--track", "needle", "+5+30"])
   assert_parses(["--track", "needle", "-30-5"])
+  assert_parses(["--track", "needle", "@-1"])
+  assert_parses(["--track", "needle", "@50-60"])
+  assert_parses(["--track", "needle", "@rename-2+2"])
+  assert_parses(["--track", "needle", "!@-1"])
   assert_parses([
     "--track",
     "needle",
@@ -35,6 +39,26 @@ pub fn main() {
     "-track+-1",
     "-print+-5",
   ])
+  assert_parses(["--track", "needle", "-wa", "+0"])
+  assert_parses(["--track", "needle", "-wes", "+0"])
+  assert_parses(["--track", "needle", "-waa", "+0"])
+  assert_parses(["--track", "needle", "-wea", "+0"])
+  assert_parses(["--track", "needle", "-wav", "+0"])
+  assert_parses(["--track", "needle", "-wan", "+0"])
+  assert_parses(["--track", "needle", "-wesv", "+0"])
+  assert_parses(["--track", "needle", "-wesn", "+0"])
+  assert_parses(["--track", "needle", "-waav", "+0"])
+  assert_parses(["--track", "needle", "-waan", "+0"])
+  assert_parses(["--track", "needle", "-weav", "+0"])
+  assert_parses(["--track", "needle", "-wean", "+0"])
+  assert_parses(["--track", "needle", "-wavn", "+0"])
+  assert_parses(["--track", "needle", "-wanv", "+0"])
+  assert_parses(["--track", "needle", "-wesvn", "+0"])
+  assert_parses(["--track", "needle", "-wesnv", "+0"])
+  assert_parses(["--track", "needle", "-waavn", "+0"])
+  assert_parses(["--track", "needle", "-waanv", "+0"])
+  assert_parses(["--track", "needle", "-weavn", "+0"])
+  assert_parses(["--track", "needle", "-weanv", "+0"])
   assert_parses(["--track", "needle", "-track+0", "+5-5"])
   assert_parses(["--track", "needle", "+0-0", "-print+5-5"])
   assert_parses(["--track", "needle", "-print+5-5"])
@@ -47,6 +71,7 @@ pub fn main() {
   assert_parses(["--track", "needle", "-bc0", "-cc0", "+-5"])
   assert_parses(["--track", "needle", "+-5", "-bc10", "-cc20"])
   assert_parses(["--track", "needle", "-no-ellipses", "+-5"])
+  assert_parses(["--track", "needle", "-nodots", "+-5"])
   assert_parses(["--dump", "120-"])
   assert_parses(["--dump", "-5--1"])
   assert_parses(["--dump", "!120-130"])
@@ -60,6 +85,37 @@ pub fn main() {
   assert_parses(["--dump", "10", "--dump", "20"])
   assert_parses(["--dump", "-cc10", "10", "--dump", "-bc20", "20"])
   assert_parses(["--dump", "-verbatim", "10", "--dump", "-verbatim", "20"])
+  let assert Ok(fragment_dump_arguments) =
+    vxml_pipeline.process_command_line_arguments(
+      [
+        "--dump-splitter",
+        "unmatched",
+        "-verbatim",
+        "boot",
+        "bootcamp",
+        "--dump-emitter",
+        "-cc10",
+        "chapter",
+        "-bc20",
+      ],
+      [],
+    )
+  assert fragment_dump_arguments.splitter_fragment_argument_groups
+    == [["unmatched", "-verbatim", "boot", "bootcamp"]]
+  assert fragment_dump_arguments.emitter_fragment_argument_groups
+    == [["-cc10", "chapter", "-bc20"]]
+  assert vxml_pipeline.fragment_dump_heading(
+      "--dump-splitter",
+      fragment_dump_arguments.splitter_fragment_argument_groups,
+      "public/bootcamp1/index.html",
+    )
+    == "--dump-splitter -verbatim boot"
+  assert vxml_pipeline.fragment_dump_heading(
+      "--dump-emitter",
+      fragment_dump_arguments.emitter_fragment_argument_groups,
+      "public/chapter/one.html",
+    )
+    == "--dump-emitter -cc10 chapter -bc20"
   assert_parses(["--validate-vxml"])
   assert_parses(["--validate-vxml", "-mention-leading-val-whitespace"])
   assert_parses(["--validate-vxml", "-mention-val-leading-whitespace"])
@@ -235,6 +291,13 @@ pub fn main() {
     "-no-ellipses",
     "-no-ellipses",
   ])
+  assert_does_not_parse([
+    "--track",
+    "needle",
+    "-nodots",
+    "-no-ellipses",
+  ])
+  assert_does_not_parse(["--dump", "-nodots"])
   assert_does_not_parse(["--dump", "-no-ellipses"])
   assert_does_not_parse(["--dump", "-bc-1"])
   assert_does_not_parse(["--dump", "-cc"])

@@ -187,6 +187,28 @@ fn is_a_s_line(line: SLine) -> Bool {
   }
 }
 
+fn is_t_s_line(line: SLine) -> Bool {
+  case line {
+    TSLine(_, _, _, _) -> True
+    _ -> False
+  }
+}
+
+fn include_text_node_lines(
+  lines: List(SLine),
+  text_indent: Int,
+) -> List(SLine) {
+  case lines {
+    [LSLine(indent: line_indent, ..) as line, ..rest]
+      if line_indent == text_indent + 2
+    -> [
+      bring_to_bystander_level(line),
+      ..include_text_node_lines(rest, text_indent)
+    ]
+    _ -> lines
+  }
+}
+
 fn is_og(line: SLine) -> Bool {
   line.selected == OG
 }
@@ -243,13 +265,18 @@ pub fn extend_selection_to_ancestors(
     let #(indent, lines) = acc
     let is_v_or_t = is_v_or_t_s_line(line)
     let is_a = is_a_s_line(line)
+    let is_elder_sibling = line.indent == indent && is_v_or_t && w1
     let line = case
       { line.indent < indent }
-      || { line.indent == indent && { { is_v_or_t && w1 } || { is_a && w2 } } }
+      || { line.indent == indent && { is_elder_sibling || { is_a && w2 } } }
       || { line.indent == indent + 2 && w1 && is_a && w3 }
     {
       True -> line |> bring_to_bystander_level
       False -> line
+    }
+    let lines = case is_elder_sibling && is_t_s_line(line) {
+      True -> include_text_node_lines(lines, line.indent)
+      False -> lines
     }
     let indent = case
       { line.indent < indent && is_v_or_t }

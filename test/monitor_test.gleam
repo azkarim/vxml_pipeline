@@ -49,7 +49,7 @@ pub fn main() {
   assert step_no == 1
   assert message == "requested stop"
 
-  let invalid = vxml.V(blame.no_blame, "bad-tag", [], [])
+  let invalid = vxml.V(blame.no_blame, "bad tag", [], [])
   let result =
     ds.run_pipeline(
       invalid,
@@ -62,7 +62,7 @@ pub fn main() {
   assert name == "validate-vxml"
   assert step_no == 0
   assert string.contains(message, "invalid tag")
-  assert string.contains(message, "bad-tag")
+  assert string.contains(message, "bad tag")
 
   let empty_text = vxml.T(blame.no_blame, [])
   let result =
@@ -79,7 +79,7 @@ pub fn main() {
   assert message == "empty text node (no blame)"
 
   let invalid_tag_with_nonempty_lines =
-    vxml.V(blame.no_blame, "bad-tag", [], [
+    vxml.V(blame.no_blame, "bad tag", [], [
       vxml.T(blame.no_blame, [vxml.Line(blame.no_blame, "content")]),
     ])
   let assert Ok(_) =

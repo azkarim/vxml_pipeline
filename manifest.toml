@@ -24,7 +24,7 @@ packages = [
   { name = "simplifile", version = "2.7.0", build_tools = ["gleam"], requirements = ["filepath", "gleam_stdlib"], otp_app = "simplifile", source = "hex", outer_checksum = "A2727627B063E87351934C7F7F008F2D1FDB16F6DE0B8C79F9E46459CFC9C164" },
   { name = "splitter", version = "1.2.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "splitter", source = "hex", outer_checksum = "3DFD6B6C49E61EDAF6F7B27A42054A17CFF6CA2135FF553D0CB61C234D281DD0" },
   { name = "vxml", version = "2.0.0", build_tools = ["gleam"], requirements = ["gleam_regexp", "gleam_stdlib", "glentities", "on", "simplifile", "splitter", "xmlm"], otp_app = "vxml", source = "hex", outer_checksum = "7C8B8A1BA990DE5971A9C1689C80A3EC7A4B4C08607BFE447A69B196C5971F86" },
-  { name = "writerly", version = "0.4.0", build_tools = ["gleam"], requirements = ["dirtree", "filepath", "gleam_regexp", "gleam_stdlib", "gleam_time", "on", "simplifile", "splitter", "vxml"], otp_app = "writerly", source = "hex", outer_checksum = "0B40C38B696BD6D168C15EDA90B891BB1CE8BBC40314EB07A977541183393050" },
+  { name = "writerly", version = "0.6.0", build_tools = ["gleam"], requirements = ["dirtree", "filepath", "gleam_regexp", "gleam_stdlib", "gleam_time", "on", "simplifile", "splitter", "vxml"], otp_app = "writerly", source = "hex", outer_checksum = "39CE1F24ED6421799B8C9E49C32B93091B065AD65BB25CCE392590E5D8A6BB1F" },
   { name = "xmlm", version = "1.0.1", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "xmlm", source = "hex", outer_checksum = "F23155B6F0B22CB8E09DAD41BB6B1CD036725FD0A80EE25B1D1B14138683A81D" },
 ]
 
@@ -45,4 +45,4 @@ shellout = { version = ">= 1.8.0 and < 2.0.0" }
 simplifile = { version = ">= 2.3.0 and < 3.0.0" }
 splitter = { version = ">= 1.1.0 and < 2.0.0" }
 vxml = { version = ">= 2.0.0 and < 3.0.0" }
-writerly = { version = ">= 0.4.0 and < 1.0.0" }
+writerly = { version = ">= 0.6.0 and < 1.0.0" }

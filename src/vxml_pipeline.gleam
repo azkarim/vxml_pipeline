@@ -573,10 +573,12 @@ pub type RendererOptions(fragment_classifier) {
     dump_filtered_vxml: Bool,
     dump_splitter_fragments: fn(OutputFragment(fragment_classifier, VXML)) ->
       Bool,
+    dump_splitter_argument_groups: List(List(String)),
     dump_splitter_output: VxmlDumpOutput,
     dump_emitter_fragments: fn(
       OutputFragment(fragment_classifier, List(OutputLine)),
     ) -> Bool,
+    dump_emitter_argument_groups: List(List(String)),
     dump_emitter_output: VxmlDumpOutput,
   )
 }
@@ -601,18 +603,20 @@ pub fn vanilla_options() -> RendererOptions(fragment_classifier) {
     only_path_key_vals: [],
     monitors: [],
     monitor_factories: [],
-    vxml_table_default_comment_columns: 30,
-    vxml_table_default_blame_columns: 48,
+    vxml_table_default_comment_columns: 0,
+    vxml_table_default_blame_columns: 58,
     dump_assembled_lines: False,
     dump_parsed_vxml: False,
     dump_filtered_vxml: False,
     dump_splitter_fragments: fn(_) { False },
+    dump_splitter_argument_groups: [],
     dump_splitter_output: VxmlTable(None, None),
     dump_emitter_fragments: fn(
       _: OutputFragment(fragment_classifier, List(OutputLine)),
     ) {
       False
     },
+    dump_emitter_argument_groups: [],
     dump_emitter_output: VxmlTable(None, None),
   )
 }
@@ -667,8 +671,10 @@ pub type ParsedCLIArguments {
     dump_parsed: Bool,
     dump_filtered: Bool,
     splitter_fragment_path_matches: Option(List(String)),
+    splitter_fragment_argument_groups: List(List(String)),
     splitter_fragment_output: Option(VxmlDumpOutput),
     emitter_fragment_path_matches: Option(List(String)),
+    emitter_fragment_argument_groups: List(List(String)),
     emitter_fragment_output: Option(VxmlDumpOutput),
     user_args: Dict(String, List(String)),
   )
@@ -725,8 +731,10 @@ fn empty_parsed_cli_arguments() -> ParsedCLIArguments {
     dump_parsed: False,
     dump_filtered: False,
     splitter_fragment_path_matches: None,
+    splitter_fragment_argument_groups: [],
     splitter_fragment_output: None,
     emitter_fragment_path_matches: None,
+    emitter_fragment_argument_groups: [],
     emitter_fragment_output: None,
     user_args: dict.from_list([]),
   )
@@ -850,11 +858,16 @@ pub fn track_cli_usage(header: String) {
     "     to '-track-+1'.",
     "",
     "  selector modifiers",
-    "     with-ancestors            include ancestor tags",
-    "     with-elder-siblings       also include elder sibling tags",
-    "     with-ancestor-attrs       include ancestor attributes",
-    "     with-attrs                alias for with-ancestor-attrs",
-    "     with-elder-sibling-attrs  also include elder sibling attrs",
+    "     with-ancestors (-wa)        include ancestor tags",
+    "     with-elder-siblings (-wes)  also include elder sibling tags",
+    "     with-ancestor-attrs (-waa)  include ancestor attributes",
+    "     with-attrs                  alias for with-ancestor-attrs",
+    "     with-elder-sibling-attrs (-wea)",
+    "                                 include elder sibling attrs",
+    "",
+    "     Append 'v' to a shorthand to also select '-verbatim'.",
+    "     Append 'n' to also select '-nodots'. Combine them in either",
+    "     order (for example, '-wavn' or '-wanv').",
     "",
     "     Modifiers before the first labeled window apply to both",
     "     selectors. Modifiers after a label apply only to that one.",
@@ -869,6 +882,7 @@ pub fn track_cli_usage(header: String) {
     "       50-60     steps 50 through 60",
     "       50-       step 50 through the end",
     "       -5--1     the final five steps",
+    "       @-1       explicitly select the final pipeline step",
     "       !123      force output at step 123",
     "",
     "     A leading '!' forces output even if the tracked fragment did",
@@ -884,14 +898,16 @@ pub fn track_cli_usage(header: String) {
     "       rename-2+3      two before through three after",
     "       rename+2+5      two through five steps after",
     "",
-    "     Prefix an absolute range with '!' when its text could be",
-    "     mistaken for a desugarer-relative range, or to force output.",
+    "     Prefix a pipeline range with '@' when it could otherwise be",
+    "     interpreted as a selector window. Prefix it with '!' to force",
+    "     output even when the tracked fragment did not change.",
     "",
     "  output formatting",
     "     -verbatim  print raw selected VXML without the blame table",
     "     -cc<n>     use n columns for blame comments",
     "     -bc<n>     use n columns for blame provenance",
-    "     -no-ellipses  suppress lines marking omitted VXML",
+    "     -nodots        suppress '...' lines marking omitted VXML",
+    "     -no-ellipses   alias for -nodots",
     "",
     "     A column count of zero suppresses that table column.",
     "     Column options have no effect with '-verbatim'.",
@@ -977,6 +993,11 @@ pub fn advanced_cli_usage(header: String) {
     "  -> (re)set the tracking step numbers of the current tracker, if",
     "     any; takes arguments in the same form as the <step numbers>",
     "     sub-option of '--track' (e.g., '50-60 !123-125 !-1')",
+    "",
+    "--track selector shorthands",
+    "  -> -wa: ancestors; -wes: elder siblings; -waa: ancestor attrs;",
+    "     -wea: elder-sibling attrs. Append 'v' for '-verbatim' or",
+    "     'n' for '-nodots'; combine them in either order.",
     "",
   ])
 }
@@ -1530,6 +1551,10 @@ fn process_command_line_arguments_(
                 arguments.splitter_fragment_path_matches,
                 path_matches,
               ),
+              splitter_fragment_argument_groups: list.append(
+                arguments.splitter_fragment_argument_groups,
+                [values],
+              ),
               splitter_fragment_output: Some(output),
             ),
           )
@@ -1550,6 +1575,10 @@ fn process_command_line_arguments_(
               emitter_fragment_path_matches: combine_fragment_path_matches(
                 arguments.emitter_fragment_path_matches,
                 path_matches,
+              ),
+              emitter_fragment_argument_groups: list.append(
+                arguments.emitter_fragment_argument_groups,
+                [values],
               ),
               emitter_fragment_output: Some(output),
             ),
@@ -1895,8 +1924,24 @@ fn parse_pipeline_step_spec(
     True -> #(Forced, string.drop_start(input, 1))
     False -> #(OnChange, input)
   }
+  let #(explicit_pipeline_range, payload) = case
+    string.starts_with(payload, "@")
+  {
+    True -> #(True, string.drop_start(payload, 1))
+    False -> #(False, payload)
+  }
   use _ <- on.stay(case payload {
-    "" -> on.Return(Error(StepNoValues("missing step range after '!'")))
+    "" -> {
+      let prefix = case mode, explicit_pipeline_range {
+        Forced, True -> "!@"
+        Forced, False -> "!"
+        OnChange, True -> "@"
+        OnChange, False -> ""
+      }
+      on.Return(
+        Error(StepNoValues("missing step range after '" <> prefix <> "'")),
+      )
+    }
     _ -> on.Stay(Nil)
   })
   case string.starts_with(payload, "+") {
@@ -1951,7 +1996,7 @@ type SelectorNormalizationState {
 }
 
 fn selector_modifier(input: String) -> Bool {
-  let input = string.replace(input, "-with", "with")
+  let input = normalize_selector_modifier(input)
   list.contains(
     [
       "with-ancestors",
@@ -1965,6 +2010,34 @@ fn selector_modifier(input: String) -> Bool {
     ],
     input,
   )
+}
+
+fn normalize_selector_modifier(input: String) -> String {
+  case input {
+    "-wa" -> "with-ancestors"
+    "-wes" -> "with-elder-siblings"
+    "-waa" -> "with-ancestor-attrs"
+    "-wea" -> "with-elder-sibling-attrs"
+    _ -> string.replace(input, "-with", "with")
+  }
+}
+
+fn expand_compound_selector_modifier(input: String) -> List(String) {
+  case input {
+    "-wav" -> ["-wa", "-verbatim"]
+    "-wan" -> ["-wa", "-nodots"]
+    "-wavn" | "-wanv" -> ["-wa", "-verbatim", "-nodots"]
+    "-wesv" -> ["-wes", "-verbatim"]
+    "-wesn" -> ["-wes", "-nodots"]
+    "-wesvn" | "-wesnv" -> ["-wes", "-verbatim", "-nodots"]
+    "-waav" -> ["-waa", "-verbatim"]
+    "-waan" -> ["-waa", "-nodots"]
+    "-waavn" | "-waanv" -> ["-waa", "-verbatim", "-nodots"]
+    "-weav" -> ["-wea", "-verbatim"]
+    "-wean" -> ["-wea", "-nodots"]
+    "-weavn" | "-weanv" -> ["-wea", "-verbatim", "-nodots"]
+    _ -> [input]
+  }
 }
 
 fn parse_selector_anchor(
@@ -2094,8 +2167,9 @@ fn parse_track_ellipsis_argument(
 ) -> Result(#(Bool, List(String)), CommandLineError) {
   use #(found, remaining) <- on.ok(
     list.try_fold(values, #(False, []), fn(acc, value) {
-      case value == "-no-ellipses", acc.0 {
-        True, True -> Error(SelectorValues("duplicate '-no-ellipses' option"))
+      let is_nodots = value == "-nodots" || value == "-no-ellipses"
+      case is_nodots, acc.0 {
+        True, True -> Error(SelectorValues("duplicate '-nodots' option"))
         True, False -> Ok(#(True, acc.1))
         False, _ -> Ok(#(acc.0, list.append(acc.1, [value])))
       }
@@ -2266,7 +2340,7 @@ fn selector_from_definition(
 ) -> Result(Selector, CommandLineError) {
   let values =
     list.map(definition.modifiers, fn(value) {
-      string.replace(value, "-with", "with")
+      normalize_selector_modifier(value)
     })
   let #(with_ancestors, values) = core.delete(values, "with-ancestors")
   let #(with_elder_siblings, values) =
@@ -2320,6 +2394,7 @@ fn parse_track_args(values: List(String)) -> Result(Tracker, CommandLineError) {
   })
 
   let assert True = first_payload != ""
+  let values = list.flat_map(values, expand_compound_selector_modifier)
   use #(include_selection_ellipses, values) <- on.ok(
     parse_track_ellipsis_argument(values),
   )
@@ -2652,6 +2727,10 @@ pub fn amend_renderer_options_by_arguments(
         _,
       ))
     },
+    dump_splitter_argument_groups: list.append(
+      options.dump_splitter_argument_groups,
+      arguments.splitter_fragment_argument_groups,
+    ),
     dump_splitter_output: option.unwrap(
       arguments.splitter_fragment_output,
       options.dump_splitter_output,
@@ -2665,6 +2744,10 @@ pub fn amend_renderer_options_by_arguments(
         _,
       ))
     },
+    dump_emitter_argument_groups: list.append(
+      options.dump_emitter_argument_groups,
+      arguments.emitter_fragment_argument_groups,
+    ),
     dump_emitter_output: option.unwrap(
       arguments.emitter_fragment_output,
       options.dump_emitter_output,
@@ -2945,25 +3028,30 @@ fn tracking_monitor_output(
   include_ellipses: Bool,
   default_blame_columns: Int,
   default_comment_columns: Int,
-) -> FeedbackBlock {
-  FeedbackBlock(
-    lines: [
-      "💠",
-      ..list.append(monitor_output_heading(context), [
-        "💠",
-        ..selected_output_lines(
-          vxml,
-          selector,
-          output,
-          include_ellipses,
-          0,
-          default_blame_columns,
-          default_comment_columns,
-        )
-      ])
-    ],
-    margin: vxml_monitor_output_margin(output),
-  )
+) -> List(FeedbackBlock) {
+  let heading = ["💠", ..list.append(monitor_output_heading(context), ["💠"])]
+  let selected =
+    selected_output_lines(
+      vxml,
+      selector,
+      output,
+      include_ellipses,
+      0,
+      default_blame_columns,
+      default_comment_columns,
+    )
+  case output {
+    VxmlTable(_, _) -> [
+      FeedbackBlock(
+        lines: list.append(heading, selected),
+        margin: AtRunnerMargin,
+      ),
+    ]
+    VxmlVerbatim -> [
+      FeedbackBlock(lines: heading, margin: AtRunnerMargin),
+      FeedbackBlock(lines: selected, margin: Verbatim),
+    ]
+  }
 }
 
 fn make_tracking_monitor(
@@ -2981,7 +3069,6 @@ fn make_tracking_monitor(
   let change_selector =
     option.unwrap(tracker.change_selector, printing_selector)
   let output = option.unwrap(tracker.output, VxmlTable(None, None))
-  let output_margin = vxml_monitor_output_margin(output)
   let include_selection_ellipses =
     option.unwrap(tracker.include_selection_ellipses, True)
   new_monitor("track", #(None, None), fn(vxml, state, context) {
@@ -3003,7 +3090,7 @@ fn make_tracking_monitor(
             default_comment_columns,
           )
         case forced || Some(comparison) != previous {
-          True -> #(Some(comparison), [monitor_output])
+          True -> #(Some(comparison), monitor_output)
           False -> #(Some(comparison), [])
         }
       }
@@ -3022,7 +3109,7 @@ fn make_tracking_monitor(
           True -> [
             FeedbackBlock(
               lines: ["..." <> ins(context.step_no) <> ". " <> desugarer.name],
-              margin: output_margin,
+              margin: AtRunnerMargin,
             ),
           ]
           False -> []
@@ -3060,26 +3147,25 @@ fn make_dump_monitor(
     case dump_all || list.contains(selected_steps, context.step_no) {
       False -> Ok(#(state, NoFeedback))
       True -> {
-        let monitor_output =
+        let heading =
           FeedbackBlock(
-            lines: [
-              "💠",
-              ..list.append(monitor_output_heading(context), [
-                "💠",
-                ..selected_output_lines(
-                  vxml,
-                  sl.all(),
-                  output,
-                  True,
-                  0,
-                  default_blame_columns,
-                  default_comment_columns,
-                )
-              ])
-            ],
+            lines: ["🌸", ..list.append(monitor_output_heading(context), ["🌸"])],
+            margin: AtRunnerMargin,
+          )
+        let dump =
+          FeedbackBlock(
+            lines: selected_output_lines(
+              vxml,
+              sl.all(),
+              output,
+              True,
+              0,
+              default_blame_columns,
+              default_comment_columns,
+            ),
             margin: vxml_monitor_output_margin(output),
           )
-        Ok(#(state, SomeFeedback([monitor_output])))
+        Ok(#(state, SomeFeedback([heading, dump])))
       }
     }
   })
@@ -3483,14 +3569,12 @@ fn sanitize_input_output_dirs(
 
 fn dump_output_lines(
   lines: List(OutputLine),
-  banner: String,
   output: VxmlDumpOutput,
   default_blame_columns: Int,
   default_comment_columns: Int,
 ) -> Nil {
   case output {
     VxmlVerbatim -> {
-      io.println(banner)
       lines
       |> list.map(io_l.output_line_to_string)
       |> string.join("\n")
@@ -3499,7 +3583,7 @@ fn dump_output_lines(
     VxmlTable(blame_columns, comment_columns) ->
       lines
       |> io_l.output_lines_table_with(
-        banner,
+        "",
         2,
         bl.BlameTableMarginColumnsMinMax(
           option.unwrap(blame_columns, default_blame_columns),
@@ -3516,7 +3600,6 @@ fn dump_output_lines(
 
 fn dump_vxml(
   vxml: VXML,
-  banner: String,
   output: VxmlDumpOutput,
   default_blame_columns: Int,
   default_comment_columns: Int,
@@ -3525,7 +3608,6 @@ fn dump_vxml(
     Ok(lines) ->
       dump_output_lines(
         lines,
-        banner,
         output,
         default_blame_columns,
         default_comment_columns,
@@ -3533,7 +3615,6 @@ fn dump_vxml(
     Error(error) -> {
       dump_output_lines(
         error.partial,
-        banner,
         output,
         default_blame_columns,
         default_comment_columns,
@@ -3541,6 +3622,64 @@ fn dump_vxml(
       io.println("VXML serialization error: " <> ins(error))
     }
   }
+}
+
+fn is_fragment_dump_output_argument(argument: String) -> Bool {
+  argument == "-verbatim"
+  || string.starts_with(argument, "-bc")
+  || string.starts_with(argument, "-cc")
+}
+
+fn fragment_dump_argument_group_matches(
+  arguments: List(String),
+  path: String,
+) -> Bool {
+  let path_matches =
+    list.filter(arguments, fn(argument) {
+      !is_fragment_dump_output_argument(argument)
+    })
+  path_matches == [] || list.any(path_matches, string.contains(path, _))
+}
+
+fn triggering_fragment_dump_arguments(
+  argument_groups: List(List(String)),
+  path: String,
+) -> Option(List(String)) {
+  list.find(argument_groups, fragment_dump_argument_group_matches(_, path))
+  |> result.map(fn(arguments) {
+    arguments
+    |> list.fold(#(False, []), fn(acc, argument) {
+      let #(path_already_included, kept) = acc
+      case is_fragment_dump_output_argument(argument) {
+        True -> #(path_already_included, [argument, ..kept])
+        False ->
+          case !path_already_included && string.contains(path, argument) {
+            True -> #(True, [argument, ..kept])
+            False -> acc
+          }
+      }
+    })
+    |> pair.second
+    |> list.reverse
+  })
+  |> option.from_result
+}
+
+@internal
+pub fn fragment_dump_heading(
+  option_name: String,
+  argument_groups: List(List(String)),
+  path: String,
+) -> String {
+  let arguments =
+    triggering_fragment_dump_arguments(argument_groups, path)
+    |> option.unwrap([])
+  [option_name, ..arguments] |> string.join(" ")
+}
+
+fn print_dump_heading(emoji: String, heading: String) -> Nil {
+  FeedbackBlock(lines: [emoji, heading, emoji], margin: AtRunnerMargin)
+  |> print_feedback_block(renderer_runner_margin)
 }
 
 fn create_dirs_on_path_to_file(
@@ -3724,7 +3863,6 @@ fn run_renderer_(
     True ->
       dump_vxml(
         parsed,
-        "parsed:",
         VxmlTable(None, None),
         options.vxml_table_default_blame_columns,
         options.vxml_table_default_comment_columns,
@@ -3752,7 +3890,6 @@ fn run_renderer_(
     True ->
       dump_vxml(
         filtered,
-        "filtered:",
         VxmlTable(None, None),
         options.vxml_table_default_blame_columns,
         options.vxml_table_default_comment_columns,
@@ -3927,14 +4064,22 @@ fn run_renderer_(
   |> list.each(fn(fr) {
     case options.dump_splitter_fragments(fr) {
       False -> Nil
-      True ->
+      True -> {
+        print_dump_heading(
+          "🧩",
+          fragment_dump_heading(
+            "--dump-splitter",
+            options.dump_splitter_argument_groups,
+            fr.path,
+          ),
+        )
         dump_vxml(
           fr.payload,
-          "splitter: " <> fr.path,
           options.dump_splitter_output,
           options.vxml_table_default_blame_columns,
           options.vxml_table_default_comment_columns,
         )
+      }
     }
   })
 
@@ -3956,14 +4101,22 @@ fn run_renderer_(
         print_verbose_feedback(feedback, options.verbose)
         case options.dump_emitter_fragments(fr) {
           False -> Nil
-          True ->
+          True -> {
+            print_dump_heading(
+              "📤",
+              fragment_dump_heading(
+                "--dump-emitter",
+                options.dump_emitter_argument_groups,
+                fr.path,
+              ),
+            )
             dump_output_lines(
               fr.payload,
-              "emitter: " <> fr.path,
               options.dump_emitter_output,
               options.vxml_table_default_blame_columns,
               options.vxml_table_default_comment_columns,
             )
+          }
         }
       }
     }

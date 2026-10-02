@@ -65,6 +65,27 @@ pub fn main() {
     )
     == ["<> A", "<> C"]
 
+  let elder_text_sibling = [
+    tracking.TSLine(blame.no_blame, 2, "<>", tracking.NotSelected),
+    tracking.LSLine(blame.no_blame, 4, "\"first line\"", tracking.NotSelected),
+    tracking.LSLine(blame.no_blame, 4, "\"second line\"", tracking.NotSelected),
+    tracking.VSLine(blame.no_blame, 2, "<> Target", tracking.OG, "Target"),
+  ]
+  let elder_text_sibling =
+    tracking.extend_selection_to_ancestors(
+      elder_text_sibling,
+      True,
+      False,
+      False,
+    )
+  assert elder_text_sibling
+    == [
+      tracking.TSLine(blame.no_blame, 2, "<>", tracking.Bystander),
+      tracking.LSLine(blame.no_blame, 4, "\"first line\"", tracking.Bystander),
+      tracking.LSLine(blame.no_blame, 4, "\"second line\"", tracking.Bystander),
+      tracking.VSLine(blame.no_blame, 2, "<> Target", tracking.OG, "Target"),
+    ]
+
   let relative_window_source =
     ["A", "B", "C", "D", "E", "F", "G", "H"]
     |> list.map(fn(tag) {

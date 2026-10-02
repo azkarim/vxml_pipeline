@@ -1,0 +1,65 @@
+|> Document
+    title=The Shape of Small Arguments
+    subtitle=A compact Writerly publishing example
+    author=Alex Example
+    date=September 2026
+    course=Methods and Models
+    institution=Example Institute
+    language=en
+    description=Two sections and an appendix rendered to HTML and LaTeX.
+    version=1.0
+    path=index.html
+
+    |> Section
+        |> SectionTitle
+            handle=small-arguments <<Section 1>>
+
+            Small arguments
+
+        |> p
+            A short document can still exercise a serious publishing
+            pipeline. It can carry metadata, stable references, numbered
+            structures, mathematics, and source-aware transformations.
+
+        |> Definition
+            handle=compact-model <<Definition 1>>
+
+            |> p
+                A compact model keeps enough structure to explain an idea
+                without reproducing every detail of the system it represents.
+
+        |> MathBlock
+            handle=growth-equation <<Equation 1>>
+
+            f(n + 1) = 2f(n) + 1
+
+        |> CalloutNote
+            |> p
+                This callout is renamed by a local desugarer whose regular
+                expression is compiled once, before the tree walk begins.
+
+    |> Section
+        |> SectionTitle
+            handle=references <<Section 2>>
+
+            References and code
+
+        |> p
+            The argument in >>small-arguments uses the model from
+            >>compact-model and the recurrence in >>growth-equation.
+
+        ```gleam
+        pub fn next(value) {
+          2 * value + 1
+        }
+        ```
+
+    |> Appendix
+        |> AppendixTitle
+            handle=implementation-notes <<Appendix A>>
+
+            Implementation notes
+
+        |> p
+            The appendix is ordinary Writerly structure. Each target decides
+            how to number, style, and serialize it.

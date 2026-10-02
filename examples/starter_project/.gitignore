@@ -1,0 +1,10 @@
+build/
+.last-command
+formatted/
+latex/*.aux
+latex/*.log
+latex/*.out
+latex/*.pdf
+latex/*.toc
+public/main.html
+latex/Document.tex

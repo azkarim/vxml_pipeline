@@ -13,6 +13,28 @@ import vxml_pipeline.{
 }
 import writerly as wl
 
+// Builds a path selector from inclusive and exclusive path fragments.
+//
+// Ordinary fragments include paths containing that fragment. Fragments
+// beginning with `!` exclude matching paths. With only exclusions, all other
+// paths are included. With both forms, a path must match an inclusion and no
+// exclusion. An empty list selects every path.
+fn path_selector_from_filters(only_paths: List(String)) -> fn(String) -> Bool {
+  let #(excluded_paths, included_paths) =
+    list.partition(only_paths, string.starts_with(_, "!"))
+  let excluded_paths = list.map(excluded_paths, string.drop_start(_, 1))
+
+  case excluded_paths, included_paths {
+    [], [] -> fn(_) { True }
+    [], _ -> fn(path) { list.any(included_paths, string.contains(path, _)) }
+    _, [] -> fn(path) { !list.any(excluded_paths, string.contains(path, _)) }
+    _, _ -> fn(path) {
+      list.any(included_paths, string.contains(path, _))
+      && !list.any(excluded_paths, string.contains(path, _))
+    }
+  }
+}
+
 /// Assembles a Writerly file or directory using the renderer's path selectors.
 ///
 /// The returned feedback describes the assembled directory tree. It is printed
@@ -21,7 +43,7 @@ pub fn default_writerly_assembler(
   dirpath_or_filepath: String,
   options: RendererOptions(_),
 ) -> Result(#(List(InputLine), Feedback), wl.AssemblyError) {
-  let path_selector = wl.path_selector_from_only_paths(options.only_paths)
+  let path_selector = path_selector_from_filters(options.only_paths)
   use #(tree, assembled) <- result.try(
     wl.assemble_input_lines_with_path_selector(
       dirpath_or_filepath,
@@ -63,8 +85,8 @@ pub fn default_writerly_emitter(
   #(OutputFragment(z, List(OutputLine)), Feedback),
   wl.SerializationError,
 ) {
-  use writerlys <- result.try(wl.vxml_to_writerlys(fragment.payload))
-  use lines <- result.try(wl.writerlys_to_output_lines(writerlys))
+  use writerly <- result.try(wl.vxml_to_writerly(fragment.payload))
+  use lines <- result.try(wl.writerly_to_output_lines(writerly))
 
   Ok(#(OutputFragment(..fragment, payload: lines), NoFeedback))
 }
