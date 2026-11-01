@@ -9,6 +9,8 @@ import vxml/blame.{Ext}
 import vxml/io_lines.{OutputLine}
 import vxml_pipeline as vp
 import vxml_pipeline/writerly_defaults
+import vxml_pipeline_cli as cli
+import vxml_pipeline_cli/writerly as cli_writerly
 
 fn options(arguments: vp.ParsedCLIArguments) {
   vp.RendererOptions(..vp.vanilla_options(), artifacts: True, warnings: True)
@@ -236,13 +238,13 @@ fn latex_emitter(fragment: vp.OutputFragment(Nil, VXML)) {
 fn renderer(arguments, pipeline, suffix, emitter) {
   let options = options(arguments)
   vp.Renderer(
-    assembler: writerly_defaults.default_writerly_assembler(_, options),
+    assembler: cli_writerly.default_writerly_assembler(_, options),
     parser: writerly_defaults.default_writerly_parser,
     filterer: vp.default_filterer(_, options, []),
     pipeline: pipeline,
     splitter: vp.stub_splitter(suffix),
     emitter: emitter,
-    writer: vp.default_writer,
+    writer: cli.default_writer,
     prettifier: vp.empty_prettifier,
   )
 }
@@ -250,27 +252,31 @@ fn renderer(arguments, pipeline, suffix, emitter) {
 pub fn html(arguments: vp.ParsedCLIArguments) {
   let renderer =
     renderer(arguments, pipeline.html_pipeline(), ".html", html_emitter)
-  vp.run_renderer(renderer, parameters("public", arguments), options(arguments))
+  cli.run_renderer(
+    renderer,
+    parameters("public", arguments),
+    options(arguments),
+  )
 }
 
 pub fn latex_document(arguments: vp.ParsedCLIArguments) {
   let renderer =
     renderer(arguments, pipeline.latex_pipeline(), ".tex", latex_emitter)
-  vp.run_renderer(renderer, parameters("latex", arguments), options(arguments))
+  cli.run_renderer(renderer, parameters("latex", arguments), options(arguments))
 }
 
 pub fn format(arguments: vp.ParsedCLIArguments) {
   let options = options(arguments)
   let renderer =
     vp.Renderer(
-      assembler: writerly_defaults.default_writerly_assembler(_, options),
+      assembler: cli_writerly.default_writerly_assembler(_, options),
       parser: writerly_defaults.default_writerly_parser,
       filterer: vp.default_filterer(_, options, []),
       pipeline: pipeline.formatter_pipeline(),
       splitter: vp.stub_splitter(".wly"),
       emitter: writerly_defaults.default_writerly_emitter,
-      writer: vp.default_writer,
+      writer: cli.default_writer,
       prettifier: vp.empty_prettifier,
     )
-  vp.run_renderer(renderer, parameters("formatted", arguments), options)
+  cli.run_renderer(renderer, parameters("formatted", arguments), options)
 }

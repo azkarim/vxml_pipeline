@@ -1,4 +1,7 @@
 //// Writerly assembler, parser, and emitter adapters for the generic renderer.
+////
+//// These adapters work on in-memory sources; the filesystem-backed assembler
+//// is `vxml_pipeline_cli/writerly.default_writerly_assembler`.
 
 import dirtree as dt
 import gleam/list
@@ -35,21 +38,27 @@ fn path_selector_from_filters(only_paths: List(String)) -> fn(String) -> Bool {
   }
 }
 
-/// Assembles a Writerly file or directory using the renderer's path selectors.
+/// Assembles in-memory Writerly sources using the renderer's path selectors.
 ///
-/// The returned feedback describes the assembled directory tree. It is printed
-/// only when verbose renderer feedback is enabled.
-pub fn default_writerly_assembler(
-  dirpath_or_filepath: String,
+/// `root` names the assembled tree; source paths are relative to it. Partially
+/// apply it as a renderer assembler, for example
+/// `assembler: assemble_writerly_sources(_, sources, options)`. The returned
+/// feedback describes the assembled directory tree. It is printed only when
+/// verbose renderer feedback is enabled.
+///
+/// To assemble a file or directory on disk use
+/// `vxml_pipeline_cli/writerly.default_writerly_assembler`.
+pub fn assemble_writerly_sources(
+  root: String,
+  sources: List(wl.SourceFile),
   options: RendererOptions(_),
 ) -> Result(#(List(InputLine), Feedback), wl.AssemblyError) {
   let path_selector = path_selector_from_filters(options.only_paths)
-  use #(tree, assembled) <- result.try(
-    wl.assemble_input_lines_with_path_selector(
-      dirpath_or_filepath,
-      path_selector,
-    ),
-  )
+  use #(tree, assembled) <- result.try(wl.assemble_sources_with_path_selector(
+    root,
+    sources,
+    path_selector,
+  ))
   let prefix = "-> assembled "
   let continuation = string.repeat(" ", string.length(prefix))
   let feedback_lines =

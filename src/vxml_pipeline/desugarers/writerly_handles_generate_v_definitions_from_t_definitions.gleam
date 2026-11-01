@@ -33,7 +33,7 @@ fn process_content(
     [] -> #(done <> remaining, attrs)
     [first_match, ..] -> {
       let #(prefix, handle_name, decorators, line_start_form) = case
-        first_match.submatches
+        handle_syntax.padded_submatches(first_match, 6)
       {
         [prefix, Some(name), decorators, ..] -> {
           let prefix = option.unwrap(prefix, "")

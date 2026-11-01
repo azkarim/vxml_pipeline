@@ -6,9 +6,10 @@ gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 gleam_regexp = ">= 1.0.0 and < 2.0.0"
 argv = ">= 1.0.2 and < 2.0.0"
 on = ">= 3.0.0 and < 4.0.0"
-vxml = ">= 2.0.0 and < 3.0.0"
-writerly = ">= 0.4.0 and < 1.0.0"
+vxml = { path = "../../../vxml" }
+writerly = { path = "../../../writerly" }
 vxml_pipeline = { path = "../.." }
+vxml_pipeline_cli = { path = "../../../vxml_pipeline_cli" }
 
 [dev_dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"

@@ -1,10 +1,12 @@
 //// Orchestrates VXML transformation pipelines and file-oriented renderers.
 ////
 //// This module owns pipeline execution, monitors, renderer stages, feedback,
-//// renderer options, and command-line integration.
+//// renderer options, and command-line parsing. It performs no file access and
+//// spawns no processes, so it runs on every target. The filesystem-backed
+//// stages, the interactive pipeline runner, and the `.last-command` and
+//// maintenance helpers live in the `vxml_pipeline_cli` package.
 
 import gleam/dict.{type Dict}
-import gleam/erlang/process.{type Subject, receive, send, spawn}
 import gleam/float
 import gleam/int
 import gleam/io
@@ -16,21 +18,15 @@ import gleam/result
 import gleam/string.{inspect as ins}
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp
-import input
 import on
-import shellout
-import simplifile
 import vxml.{type VXML, T, V} as vp
 import vxml/blame.{type Blame, Ext} as bl
 import vxml/io_lines.{type InputLine, type OutputLine, OutputLine} as io_l
 import vxml_pipeline/core.{type Desugarer, type Pipeline}
 import vxml_pipeline/desugarers as dl
 import vxml_pipeline/feedback_boxes as fb
-import vxml_pipeline/generate_local_desugarers_dot_gleam as local_desugarer_generator
-import vxml_pipeline/renumber_local_desugarer_blames as local_desugarer_blame_renumberer
 import vxml_pipeline/selectors as sl
 import vxml_pipeline/tables as pr
-import vxml_pipeline/testing
 import vxml_pipeline/tracking.{type Selector}
 
 /// Indentation used by the package's built-in command-line help text.
@@ -41,8 +37,6 @@ const renderer_runner_margin = 2
 const tracking_progress_interval = 10
 
 const tracking_progress_quiet_steps = 3
-
-const long_running_desugarer_report_interval_seconds = 10
 
 /// Placement of one feedback block in terminal output.
 pub type FeedbackMargin {
@@ -133,15 +127,6 @@ pub fn new_monitor(
 pub type Assembler(assembler_error) =
   fn(String) -> Result(#(List(InputLine), Feedback), assembler_error)
 
-/// Reads one input file without producing feedback.
-pub fn default_file_assembler(
-  path: String,
-) -> Result(#(List(InputLine), Feedback), simplifile.FileError) {
-  io_l.read(path, 0)
-  |> result.map(fn(lines) { #(lines, NoFeedback) })
-}
-
-/// Parses assembled input lines into one VXML root and optional feedback.
 ///
 /// Parser errors carry the blame location at which parsing failed.
 pub type Parser(parser_error) =
@@ -329,42 +314,6 @@ pub type Writer(fragment_classifier, writer_error) =
       writer_error,
     )
 
-fn output_dir_local_path_printer(
-  output_dir: String,
-  local_path: String,
-  content: String,
-) -> Result(Nil, simplifile.FileError) {
-  let assert False = string.starts_with(local_path, "/")
-  let assert False = string.ends_with(output_dir, "/")
-  let path = output_dir <> "/" <> local_path
-  use _ <- on.ok(create_dirs_on_path_to_file(path))
-  simplifile.write(path, content)
-}
-
-/// Writes a fragment to `output_dir/fragment.path`, creating parent
-/// directories as needed.
-pub fn default_writer(
-  output_dir: String,
-  fragment: OutputFragment(fragment_classifier, String),
-) -> Result(#(GhostOfOutputFragment(fragment_classifier), Feedback), String) {
-  case
-    output_dir_local_path_printer(output_dir, fragment.path, fragment.payload)
-  {
-    Ok(Nil) -> {
-      Ok(#(
-        GhostOfOutputFragment(fragment.classifier, fragment.path),
-        NoFeedback,
-      ))
-    }
-    Error(file_error) -> {
-      Error(
-        ins(file_error) <> " on path " <> output_dir <> "/" <> fragment.path,
-      )
-    }
-  }
-}
-
-/// Metadata retained after a fragment has been written and its payload is no
 /// longer needed.
 pub type GhostOfOutputFragment(fragment_classifier) {
   GhostOfOutputFragment(classifier: fragment_classifier, path: String)
@@ -382,118 +331,6 @@ pub type Prettifier(fragment_classifier) =
   fn(String, GhostOfOutputFragment(fragment_classifier), Option(String)) ->
     Option(PrettifierFeedback)
 
-fn run_prettier(in: String, path: String, check: Bool) -> PrettifierFeedback {
-  let result =
-    shellout.command(
-      run: "prettier",
-      in: in,
-      with: [
-        case check {
-          True -> "--check"
-          False -> "--write"
-        },
-        path,
-      ],
-      opt: [],
-    )
-  let output = case result {
-    Ok(s) -> s
-    Error(#(_, s)) -> s
-  }
-  let lines = string.split(output, "\n")
-  let warnings =
-    lines
-    |> list.filter(fn(l) { string.starts_with(l, "[warn]") })
-    |> list.map(fn(s) { string.drop_start(s, 6) |> string.trim })
-  let error_lines =
-    lines
-    |> list.filter(fn(l) { string.starts_with(l, "[error]") })
-    |> list.map(fn(s) { string.drop_start(s, 7) |> string.trim })
-  let errors = case result {
-    Ok(_) -> error_lines
-    Error(#(_, _)) ->
-      case error_lines {
-        [_, ..] -> error_lines
-        [] -> {
-          case check {
-            True -> []
-            False ->
-              case string.trim(output) {
-                "" -> []
-                s -> [s]
-              }
-          }
-        }
-      }
-  }
-  PrettifierFeedback(warnings: warnings, errors: errors)
-}
-
-/// Runs Prettier for `.html` and `.tsx` fragments.
-///
-/// Without a bespoke destination it checks the written file. With a
-/// destination it copies the file there and rewrites that copy, unless the
-/// destination resolves to the original output path.
-pub fn default_prettier_prettifier(
-  output_dir: String,
-  ghost: GhostOfOutputFragment(fragment_classifier),
-  prettier_dir: Option(String),
-) -> Option(PrettifierFeedback) {
-  use <- on.eager_false_true(
-    list.any([".html", ".tsx"], string.ends_with(ghost.path, _)),
-    None,
-  )
-
-  let source_path = output_dir <> "/" <> ghost.path
-
-  use #(dest_path, check) <- on.stay(case prettier_dir {
-    None -> on.Stay(#(source_path, True))
-
-    Some(dir) -> {
-      let dest_path = dir <> "/" <> ghost.path
-      use <- on.true_false(source_path == dest_path, fn() {
-        on.Stay(#(dest_path, False))
-      })
-      use _ <- on.error_ok(create_dirs_on_path_to_file(dest_path), fn(e) {
-        on.Return(
-          Some(
-            PrettifierFeedback(warnings: [], errors: [
-              "could not create directories on path " <> ins(e),
-            ]),
-          ),
-        )
-      })
-      case
-        shellout.command(
-          run: "cp",
-          in: ".",
-          with: [source_path, dest_path],
-          opt: [],
-        )
-      {
-        Error(#(_, msg)) -> {
-          on.Return(
-            Some(
-              PrettifierFeedback(warnings: [], errors: [
-                "unable to copy '"
-                <> source_path
-                <> "' to '"
-                <> dest_path
-                <> "':"
-                <> string.trim(msg),
-              ]),
-            ),
-          )
-        }
-        _ -> on.Stay(#(dest_path, False))
-      }
-    }
-  })
-
-  run_prettier(".", dest_path, check) |> Some
-}
-
-/// A no-op prettifier that applies to every fragment and reports no messages.
 pub fn empty_prettifier(
   _: String,
   _: GhostOfOutputFragment(fragment_classifier),
@@ -1042,94 +879,6 @@ pub fn handle_help_requests(
   Ok(arguments.help || arguments.esoteric || arguments.track_help)
 }
 
-/// Run requested local-desugarer maintenance.
-///
-/// Each operation runs at most once. `--desugarers` requests blame
-/// renumbering, local-library generation, and all local desugarer tests.
-pub fn handle_maintenance_requests(
-  arguments: ParsedCLIArguments,
-  local_desugarer_tests: List(fn() -> testing.AssertiveTestCollection),
-) -> Result(Bool, CLIError) {
-  let renumber = arguments.renumber || arguments.desugarers
-  let generate = arguments.generate || arguments.desugarers
-  let requested_test_names = case
-    arguments.desugarer_tests,
-    arguments.desugarers
-  {
-    None, True -> Some([])
-    requested, _ -> requested
-  }
-  let tests_requested = option.is_some(requested_test_names)
-
-  let #(maintenance_result, printed) =
-    perform_requested_maintenance(
-      renumber,
-      generate,
-      requested_test_names,
-      local_desugarer_tests,
-      False,
-    )
-  case printed {
-    True -> io.println("")
-    False -> Nil
-  }
-  use _ <- result.try(maintenance_result |> result.map_error(MaintenanceError))
-
-  Ok(renumber || generate || tests_requested)
-}
-
-fn perform_requested_maintenance(
-  renumber: Bool,
-  generate: Bool,
-  requested_test_names: Option(List(String)),
-  local_desugarer_tests: List(fn() -> testing.AssertiveTestCollection),
-  content_printed: Bool,
-) -> #(Result(Nil, String), Bool) {
-  case renumber {
-    True ->
-      case local_desugarer_blame_renumberer.perform() {
-        Error(message) -> #(Error(message), content_printed)
-        Ok(Nil) ->
-          perform_requested_maintenance(
-            False,
-            generate,
-            requested_test_names,
-            local_desugarer_tests,
-            True,
-          )
-      }
-    False ->
-      case generate {
-        True ->
-          case local_desugarer_generator.perform() {
-            Error(message) -> #(Error(message), content_printed)
-            Ok(Nil) ->
-              perform_requested_maintenance(
-                False,
-                False,
-                requested_test_names,
-                local_desugarer_tests,
-                True,
-              )
-          }
-        False ->
-          case requested_test_names {
-            None -> #(Ok(Nil), content_printed)
-            Some(names) -> {
-              case content_printed {
-                True -> io.println("")
-                False -> Nil
-              }
-              #(
-                testing.test_desugarers_content(local_desugarer_tests, names),
-                True,
-              )
-            }
-          }
-      }
-  }
-}
-
 pub opaque type CommandLineError {
   ExpectedDoubleDashString(String)
   UnknownOptionArgument(String)
@@ -1143,78 +892,6 @@ pub opaque type CommandLineError {
   StepNoValues(String)
   TableValues(String)
   TimesValues(String)
-}
-
-const dot_last_command_path = ".last-command"
-
-/// Replace the lone `--last-command` option with the arguments saved in
-/// `.last-command`. All other argument lists are returned unchanged.
-pub fn read_from_dot_last_command(
-  arguments: List(String),
-) -> Result(List(String), CLIError) {
-  case arguments {
-    ["--last-command"] -> {
-      use contents <- result.try(
-        simplifile.read(dot_last_command_path)
-        |> result.map_error(fn(error) { DotLastCommandReadError(ins(error)) }),
-      )
-      decode_dot_last_command(contents)
-    }
-    _ -> Ok(arguments)
-  }
-}
-
-/// Overwrite `.last-command` with an unambiguous encoding of `arguments`.
-pub fn write_to_dot_last_command(
-  arguments: List(String),
-) -> Result(Nil, CLIError) {
-  arguments
-  |> encode_dot_last_command
-  |> simplifile.write(dot_last_command_path, _)
-  |> result.map_error(fn(error) { DotLastCommandWriteError(ins(error)) })
-}
-
-fn encode_dot_last_command(arguments: List(String)) -> String {
-  arguments
-  |> list.map(fn(argument) {
-    int.to_string(string.length(argument)) <> ":" <> argument
-  })
-  |> string.concat
-}
-
-fn decode_dot_last_command(contents: String) -> Result(List(String), CLIError) {
-  case contents, string.starts_with(contents, "--") {
-    "", _ -> Ok([])
-    _, True ->
-      contents
-      |> string.split(" ")
-      |> list.map(string.trim)
-      |> list.filter(fn(argument) { !string.is_empty(argument) })
-      |> Ok
-    _, False -> {
-      use #(length_string, after_colon) <- result.try(
-        string.split_once(contents, ":")
-        |> result.map_error(fn(_) {
-          DotLastCommandDecodeError("missing argument-length separator")
-        }),
-      )
-      use length <- result.try(
-        int.parse(length_string)
-        |> result.map_error(fn(_) {
-          DotLastCommandDecodeError("invalid argument length")
-        }),
-      )
-      use _ <- on.ok(case length >= 0 && string.length(after_colon) >= length {
-        True -> Ok(Nil)
-        False -> Error(DotLastCommandDecodeError("invalid argument payload"))
-      })
-      let argument = string.slice(after_colon, 0, length)
-      let remainder =
-        string.slice(after_colon, length, string.length(after_colon) - length)
-      use arguments <- on.ok(decode_dot_last_command(remainder))
-      Ok([argument, ..arguments])
-    }
-  }
 }
 
 /// Parses standard VXML Pipeline arguments and declared application arguments.
@@ -3254,13 +2931,39 @@ pub type PipelineExecutionError {
   PipelineMonitorError(MonitorFailure)
 }
 
-/// Terminal presentation and interaction settings for `run_pipeline`.
+/// Terminal presentation and interaction settings for a `PipelineRunner`.
+///
+/// `run_pipeline` uses only `feedback_margin`. The interactive and
+/// long-running-desugarer settings need a terminal and are honored by the
+/// runner in the `vxml_pipeline_cli` package.
 pub type PipelineUXOptions {
   PipelineUXOptions(
     monitor_interactive_mode: Bool,
     report_long_running_desugarers: Bool,
     feedback_margin: Int,
   )
+}
+
+/// The result of running a pipeline: the final VXML, the desugarers'
+/// warnings, and one duration per desugarer in pipeline order.
+pub type PipelineResult =
+  Result(
+    #(VXML, List(InSituDesugaringWarning), List(Duration)),
+    PipelineExecutionError,
+  )
+
+/// Runs a pipeline for a renderer. `run_pipeline` is the portable default.
+pub type PipelineRunner =
+  fn(VXML, Pipeline, List(Monitor), PipelineUXOptions) -> PipelineResult
+
+/// Progress reported by `run_pipeline_with_events` while a pipeline runs.
+pub type PipelineEvent {
+  /// A desugarer is about to run at the given step number.
+  DesugarerStarted(desugarer: Desugarer, step_no: Int)
+  /// The most recently started desugarer returned successfully.
+  DesugarerFinished
+  /// A monitor produced feedback after the given step number.
+  MonitorProducedFeedback(feedback: FeedbackBlock, step_no: Int)
 }
 
 type PipelineProducerState {
@@ -3272,98 +2975,85 @@ type PipelineProducerState {
   )
 }
 
-type Message {
-  ProducerStartedDesugarer(Desugarer, Int)
-  ProducerFinishedDesugarer
-  MonitorProducedOutput(FeedbackBlock, Int)
-  ProducerFinished(
-    Result(
-      #(VXML, List(InSituDesugaringWarning), List(Duration)),
-      PipelineExecutionError,
-    ),
-  )
-}
-
 fn update_monitors(
-  main_process_subject: Subject(Message),
   monitors: List(Monitor),
   vxml: VXML,
   context: PipelineStepContext,
-) -> Result(List(Monitor), MonitorFailure) {
-  monitors
-  |> list.try_fold([], fn(next_monitors, monitor) {
-    use update <- on.error_ok(monitor.update(vxml, context), fn(message) {
-      Error(MonitorFailure(
-        monitor_name: monitor.name,
-        step_no: context.step_no,
-        message: message,
-      ))
-    })
-    let MonitorUpdate(next, feedback) = update
-    case feedback {
-      NoFeedback -> Nil
-      SomeFeedback(blocks) ->
-        list.each(blocks, fn(block) {
-          send(
-            main_process_subject,
-            MonitorProducedOutput(block, context.step_no),
+  next_monitors: List(Monitor),
+  state: s,
+  on_event: fn(s, PipelineEvent) -> s,
+) -> #(Result(List(Monitor), MonitorFailure), s) {
+  case monitors {
+    [] -> #(Ok(list.reverse(next_monitors)), state)
+    [monitor, ..rest] ->
+      case monitor.update(vxml, context) {
+        Error(message) -> #(
+          Error(MonitorFailure(
+            monitor_name: monitor.name,
+            step_no: context.step_no,
+            message: message,
+          )),
+          state,
+        )
+        Ok(MonitorUpdate(next, feedback)) -> {
+          let state = case feedback {
+            NoFeedback -> state
+            SomeFeedback(blocks) ->
+              list.fold(blocks, state, fn(state, block) {
+                on_event(state, MonitorProducedFeedback(block, context.step_no))
+              })
+          }
+          update_monitors(
+            rest,
+            vxml,
+            context,
+            [next, ..next_monitors],
+            state,
+            on_event,
           )
-        })
-    }
-    Ok([next, ..next_monitors])
-  })
-  |> result.map(list.reverse)
+        }
+      }
+  }
 }
 
-fn producer(
-  main_process_subject: Subject(Message),
-  vxml: VXML,
-  pipeline: Pipeline,
-  monitors: List(Monitor),
-) -> Nil {
-  let first_desugarer = case list.first(pipeline) {
-    Ok(desugarer) -> Some(desugarer)
-    Error(_) -> None
-  }
-  let initial_context =
-    PipelineStepContext(
-      step_no: 0,
-      previous_desugarer: None,
-      next_desugarer: first_desugarer,
+fn run_desugarers(
+  remaining: List(Desugarer),
+  step_no: Int,
+  producer_state: PipelineProducerState,
+  state: s,
+  on_event: fn(s, PipelineEvent) -> s,
+) -> #(PipelineResult, s) {
+  case remaining {
+    [] -> #(
+      Ok(#(
+        producer_state.vxml,
+        producer_state.warnings,
+        list.reverse(producer_state.durations),
+      )),
+      state,
     )
-  let final = case
-    update_monitors(main_process_subject, monitors, vxml, initial_context)
-  {
-    Error(failure) -> Error(PipelineMonitorError(failure))
-    Ok(monitors) ->
-      pipeline
-      |> list.index_map(fn(desugarer, index) { #(desugarer, index) })
-      |> list.try_fold(
-        PipelineProducerState(vxml, [], [], monitors),
-        fn(state, indexed_desugarer) {
-          let #(desugarer, index) = indexed_desugarer
-          let step_no = index + 1
-          send(
-            main_process_subject,
-            ProducerStartedDesugarer(desugarer, step_no),
+    [desugarer, ..rest] -> {
+      let state = on_event(state, DesugarerStarted(desugarer, step_no))
+      let now = timestamp.system_time()
+      case desugarer.transform(producer_state.vxml) {
+        Error(error) -> #(
+          InSituDesugaringError(
+            desugarer: desugarer,
+            step_no: step_no,
+            blame: error.blame,
+            message: error.message,
           )
-          let now = timestamp.system_time()
-          use #(vxml, new_warnings) <- on.error_ok(
-            desugarer.transform(state.vxml),
-            fn(error) {
-              InSituDesugaringError(
-                desugarer: desugarer,
-                step_no: step_no,
-                blame: error.blame,
-                message: error.message,
-              )
-              |> PipelineDesugaringError
-              |> Error
-            },
-          )
+            |> PipelineDesugaringError
+            |> Error,
+          state,
+        )
+        Ok(#(vxml, new_warnings)) -> {
           let then = timestamp.system_time()
-          send(main_process_subject, ProducerFinishedDesugarer)
-          let durations = [timestamp.difference(now, then), ..state.durations]
+          let state = on_event(state, DesugarerFinished)
+          let durations = [
+            timestamp.difference(now, then),
+            ..producer_state.durations
+          ]
           let new_warnings =
             list.map(new_warnings, fn(warning) {
               InSituDesugaringWarning(
@@ -3373,9 +3063,9 @@ fn producer(
                 message: warning.message,
               )
             })
-          let next_desugarer = case list.first(list.drop(pipeline, step_no)) {
-            Ok(desugarer) -> Some(desugarer)
-            Error(_) -> None
+          let next_desugarer = case rest {
+            [next, ..] -> Some(next)
+            [] -> None
           }
           let context =
             PipelineStepContext(
@@ -3383,27 +3073,96 @@ fn producer(
               previous_desugarer: Some(desugarer),
               next_desugarer: next_desugarer,
             )
-          use monitors <- on.error_ok(
-            update_monitors(main_process_subject, state.monitors, vxml, context),
-            fn(failure) { Error(PipelineMonitorError(failure)) },
-          )
-          Ok(PipelineProducerState(
-            vxml: vxml,
-            warnings: list.append(state.warnings, new_warnings),
-            durations: durations,
-            monitors: monitors,
-          ))
-        },
-      )
-      |> result.map(fn(state) {
-        #(state.vxml, state.warnings, list.reverse(state.durations))
-      })
+          case
+            update_monitors(
+              producer_state.monitors,
+              vxml,
+              context,
+              [],
+              state,
+              on_event,
+            )
+          {
+            #(Error(failure), state) -> #(
+              Error(PipelineMonitorError(failure)),
+              state,
+            )
+            #(Ok(monitors), state) ->
+              run_desugarers(
+                rest,
+                step_no + 1,
+                PipelineProducerState(
+                  vxml: vxml,
+                  warnings: list.append(producer_state.warnings, new_warnings),
+                  durations: durations,
+                  monitors: monitors,
+                ),
+                state,
+                on_event,
+              )
+          }
+        }
+      }
+    }
   }
-
-  send(main_process_subject, ProducerFinished(final))
 }
 
-fn print_feedback_block(feedback: FeedbackBlock, runner_margin: Int) -> Nil {
+/// Runs an ordered VXML transformation pipeline synchronously, folding every
+/// progress event into `state`.
+///
+/// Monitors observe the initial VXML at step zero and the result after every
+/// desugarer. The returned durations correspond positionally to the supplied
+/// pipeline. The final `state` is returned whether or not the pipeline
+/// succeeds, so it holds every event up to a failure. This function performs
+/// no I/O and works on every target; collecting the events into a list, for
+/// example, gives an editor the monitor feedback without printing it.
+pub fn run_pipeline_fold(
+  vxml: VXML,
+  pipeline: Pipeline,
+  monitors: List(Monitor),
+  state: s,
+  on_event: fn(s, PipelineEvent) -> s,
+) -> #(PipelineResult, s) {
+  let initial_context =
+    PipelineStepContext(
+      step_no: 0,
+      previous_desugarer: None,
+      next_desugarer: list.first(pipeline) |> option.from_result,
+    )
+  case update_monitors(monitors, vxml, initial_context, [], state, on_event) {
+    #(Error(failure), state) -> #(Error(PipelineMonitorError(failure)), state)
+    #(Ok(monitors), state) ->
+      run_desugarers(
+        pipeline,
+        1,
+        PipelineProducerState(vxml, [], [], monitors),
+        state,
+        on_event,
+      )
+  }
+}
+
+/// Runs an ordered VXML transformation pipeline synchronously, passing every
+/// progress event to the side-effecting `on_event` as it happens.
+///
+/// See `run_pipeline_fold` for the semantics.
+pub fn run_pipeline_with_events(
+  vxml: VXML,
+  pipeline: Pipeline,
+  monitors: List(Monitor),
+  on_event: fn(PipelineEvent) -> Nil,
+) -> PipelineResult {
+  run_pipeline_fold(vxml, pipeline, monitors, Nil, fn(_, event) {
+    on_event(event)
+  }).0
+}
+
+/// Prints one feedback block, indenting `AtRunnerMargin` blocks by
+/// `runner_margin` spaces.
+pub fn print_feedback_block(
+  feedback: FeedbackBlock,
+  runner_margin: Int,
+) -> Nil {
   let FeedbackBlock(lines, margin) = feedback
   let margin = case margin {
     AtRunnerMargin -> string.repeat(" ", runner_margin)
@@ -3430,129 +3189,27 @@ fn print_verbose_feedback(feedback: Feedback, verbose: Bool) -> Nil {
   }
 }
 
-fn loop(
-  subject: Subject(Message),
-  countdown: Int,
-  running_desugarer: Option(#(Desugarer, Int)),
-  running_seconds: Int,
-  ux_options: PipelineUXOptions,
-  // pause for user only when countdown == 0
-) -> Result(
-  #(VXML, List(InSituDesugaringWarning), List(Duration)),
-  PipelineExecutionError,
-) {
-  case
-    receive(
-      subject,
-      within: long_running_desugarer_report_interval_seconds * 1000,
-    )
-  {
-    Ok(ProducerStartedDesugarer(desugarer, step_no)) ->
-      loop(subject, countdown, Some(#(desugarer, step_no)), 0, ux_options)
-
-    Ok(ProducerFinishedDesugarer) ->
-      loop(subject, countdown, None, 0, ux_options)
-
-    Ok(MonitorProducedOutput(output, step_no)) -> {
-      print_feedback_block(output, ux_options.feedback_margin)
-      case countdown == 0 {
-        False -> {
-          loop(
-            subject,
-            countdown - 1,
-            running_desugarer,
-            running_seconds,
-            ux_options,
-          )
-        }
-        True ->
-          case input.input("(↵|<n>|e|c) ") {
-            Ok(msg) -> {
-              let #(countdown, quit) = case int.parse(msg) {
-                Ok(q) -> #(q, False)
-                Error(_) ->
-                  case msg {
-                    "e" -> #(-1, False)
-                    "c" -> #(-1, True)
-                    _ -> #(1, False)
-                  }
-              }
-              case quit {
-                True -> Error(PipelineUserExit(UserExit(step_no)))
-                False ->
-                  loop(
-                    subject,
-                    countdown - 1,
-                    running_desugarer,
-                    running_seconds,
-                    ux_options,
-                  )
-              }
-            }
-            Error(_) -> {
-              panic as "error reading input"
-            }
-          }
-      }
-    }
-
-    Ok(ProducerFinished(result)) -> {
-      case result {
-        Ok(value) -> Ok(value)
-        Error(error) -> Error(error)
-      }
-    }
-
-    Error(_) -> {
-      let running_seconds =
-        running_seconds + long_running_desugarer_report_interval_seconds
-      case running_desugarer, ux_options.report_long_running_desugarers {
-        Some(#(desugarer, step_no)), True ->
-          io.println(
-            string.repeat(" ", ux_options.feedback_margin)
-            <> "[desugarer "
-            <> ins(step_no)
-            <> ". "
-            <> desugarer.name
-            <> " still running after "
-            <> ins(running_seconds)
-            <> "s]",
-          )
-        _, _ -> Nil
-      }
-      loop(subject, countdown, running_desugarer, running_seconds, ux_options)
-    }
-  }
-}
-
-/// Runs an ordered VXML transformation pipeline.
+/// Runs an ordered VXML transformation pipeline, printing monitor feedback as
+/// it is produced.
 ///
 /// Monitors observe the initial VXML at step zero and the result after every
 /// desugarer. The returned durations correspond positionally to the supplied
-/// pipeline. Terminal interaction and long-running-step reports are controlled
-/// by `ux_options`.
+/// pipeline. The run is synchronous and works on every target; it ignores
+/// `monitor_interactive_mode` and `report_long_running_desugarers`, which
+/// `vxml_pipeline_cli.run_pipeline` implements for terminals.
 pub fn run_pipeline(
   vxml: VXML,
   pipeline: Pipeline,
   monitors: List(Monitor),
   ux_options: PipelineUXOptions,
-) -> Result(
-  #(VXML, List(InSituDesugaringWarning), List(Duration)),
-  PipelineExecutionError,
-) {
-  let main_subject = process.new_subject()
-
-  let producer_pid =
-    spawn(fn() { producer(main_subject, vxml, pipeline, monitors) })
-
-  process.link(producer_pid)
-
-  let countdown = case ux_options.monitor_interactive_mode {
-    True -> 0
-    False -> -1
-  }
-
-  loop(main_subject, countdown, None, 0, ux_options)
+) -> PipelineResult {
+  run_pipeline_with_events(vxml, pipeline, monitors, fn(event) {
+    case event {
+      MonitorProducedFeedback(feedback, _) ->
+        print_feedback_block(feedback, ux_options.feedback_margin)
+      DesugarerStarted(..) | DesugarerFinished -> Nil
+    }
+  })
 }
 
 // Renderer helpers
@@ -3682,23 +3339,6 @@ fn print_dump_heading(emoji: String, heading: String) -> Nil {
   |> print_feedback_block(renderer_runner_margin)
 }
 
-fn create_dirs_on_path_to_file(
-  path_to_file: String,
-) -> Result(Nil, simplifile.FileError) {
-  let pieces = path_to_file |> string.split("/")
-  let pieces = core.drop_last(pieces)
-  list.try_fold(pieces, ".", fn(acc, piece) {
-    let acc = acc <> "/" <> piece
-    use exists <- on.ok(simplifile.is_directory(acc))
-    use _ <- on.ok(case exists {
-      True -> Ok(Nil)
-      False -> simplifile.create_directory(acc)
-    })
-    Ok(acc)
-  })
-  |> result.map(fn(_) { Nil })
-}
-
 /// Distinguishes an emitter failure from a writer failure for one fragment.
 pub type EmitterOrWriterError(emitter_error, writer_error) {
   EmitterError(emitter_error)
@@ -3739,6 +3379,11 @@ fn strip_surrounding_double_quotes(value: String) -> String {
 /// The stages run in assembler, parser, filterer, pipeline, splitter, emitter,
 /// writer, and optional prettifier order. The function owns a trailing blank
 /// line after any renderer output.
+///
+/// The pipeline runs with `run_pipeline`. All file access goes through the
+/// renderer's assembler, writer, and prettifier; for the filesystem-backed
+/// defaults and the interactive pipeline runner use
+/// `vxml_pipeline_cli.run_renderer`.
 pub fn run_renderer(
   renderer: Renderer(
     assembler_error,
@@ -3762,12 +3407,41 @@ pub fn run_renderer(
     writer_error,
   ),
 ) {
-  let result = run_renderer_(renderer, parameters, options)
+  run_renderer_with_pipeline_runner(run_pipeline, renderer, parameters, options)
+}
+
+/// `run_renderer` with a caller-supplied pipeline runner.
+pub fn run_renderer_with_pipeline_runner(
+  pipeline_runner: PipelineRunner,
+  renderer: Renderer(
+    assembler_error,
+    parser_error,
+    filterer_error,
+    splitter_error,
+    emitter_error,
+    writer_error,
+    fragment_classifier,
+  ),
+  parameters: RendererParameters,
+  options: RendererOptions(fragment_classifier),
+) -> Result(
+  List(String),
+  RendererError(
+    assembler_error,
+    parser_error,
+    filterer_error,
+    splitter_error,
+    emitter_error,
+    writer_error,
+  ),
+) {
+  let result = run_renderer_(pipeline_runner, renderer, parameters, options)
   io.println("")
   result
 }
 
 fn run_renderer_(
+  pipeline_runner: PipelineRunner,
   renderer: Renderer(
     assembler_error,
     parser_error,
@@ -3914,7 +3588,7 @@ fn run_renderer_(
   )
 
   use #(desugared, warnings, durations) <- on.error_ok(
-    run_pipeline(
+    pipeline_runner(
       filtered,
       renderer.pipeline,
       monitors,

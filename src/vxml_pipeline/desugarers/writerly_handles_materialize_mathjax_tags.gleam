@@ -140,7 +140,7 @@ fn replace_braced_labels(
   case regexp.scan(re, content) {
     [] -> content
     [first_match, ..] ->
-      case first_match.submatches {
+      case handle_syntax.padded_submatches(first_match, 4) {
         [option.Some(keyword), option.Some(name), decorators, remainder, ..] -> {
           let decorators = option.unwrap(decorators, "")
           let remainder = option.unwrap(remainder, "")
@@ -192,7 +192,7 @@ fn replace_bare_labels(
     [] -> done <> remaining
     [first_match, ..] -> {
       let #(prefix, name, decorators, line_start_form) = case
-        first_match.submatches
+        handle_syntax.padded_submatches(first_match, 6)
       {
         [prefix, option.Some(name), decorators, ..] -> {
           let prefix = option.unwrap(prefix, "")

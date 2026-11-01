@@ -1,9 +1,9 @@
-import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
 import gleam/string
 import gleam/time/duration
+import gleam/time/timestamp
 import vxml
 import vxml/blame
 import vxml_pipeline as ds
@@ -123,12 +123,28 @@ pub fn main() {
     )
 
   pipeline_durations_follow_pipeline_order()
+  pipeline_events_follow_pipeline_order()
+}
+
+// Waits without `process.sleep`, which only exists on Erlang.
+fn busy_wait(milliseconds: Int) -> Nil {
+  let start = timestamp.system_time()
+  let deadline = duration.milliseconds(milliseconds)
+  let elapsed = fn() { timestamp.difference(start, timestamp.system_time()) }
+  busy_wait_until(elapsed, deadline)
+}
+
+fn busy_wait_until(elapsed: fn() -> duration.Duration, deadline) -> Nil {
+  case duration.compare(elapsed(), deadline) {
+    order.Lt -> busy_wait_until(elapsed, deadline)
+    _ -> Nil
+  }
 }
 
 fn pipeline_durations_follow_pipeline_order() {
   let slow =
     Desugarer("slow", None, None, fn(vxml) {
-      process.sleep(30)
+      busy_wait(30)
       Ok(#(vxml, []))
     })
   let fast = Desugarer("fast", None, None, fn(vxml) { Ok(#(vxml, [])) })
@@ -138,4 +154,46 @@ fn pipeline_durations_follow_pipeline_order() {
     ds.run_pipeline(input, [slow, fast], [], pipeline_ux_options())
 
   assert duration.compare(slow_duration, fast_duration) == order.Gt
+}
+
+fn pipeline_events_follow_pipeline_order() {
+  let first = Desugarer("first", None, None, fn(vxml) { Ok(#(vxml, [])) })
+  let second = Desugarer("second", None, None, fn(vxml) { Ok(#(vxml, [])) })
+  let input = vxml.V(blame.no_blame, "root", [], [])
+  let monitor =
+    ds.new_monitor("step-echo", Nil, fn(_vxml, state, context) {
+      let block =
+        ds.FeedbackBlock([string.inspect(context.step_no)], ds.Verbatim)
+      Ok(#(state, ds.SomeFeedback([block])))
+    })
+
+  let transcript = fn(event) {
+    case event {
+      ds.DesugarerStarted(desugarer, step_no) ->
+        "start " <> desugarer.name <> " " <> string.inspect(step_no)
+      ds.DesugarerFinished -> "finish"
+      ds.MonitorProducedFeedback(feedback, step_no) ->
+        "feedback "
+        <> string.join(feedback.lines, "")
+        <> " at "
+        <> string.inspect(step_no)
+    }
+  }
+
+  let #(result, events) =
+    ds.run_pipeline_fold(input, [first, second], [monitor], [], fn(acc, event) {
+      [transcript(event), ..acc]
+    })
+
+  let assert Ok(_) = result
+  assert list.reverse(events)
+    == [
+      "feedback 0 at 0",
+      "start first 1",
+      "finish",
+      "feedback 1 at 1",
+      "start second 2",
+      "finish",
+      "feedback 2 at 2",
+    ]
 }

@@ -8,10 +8,8 @@ import line_wrap_test
 import link_punctuation_test
 import monitor_test
 import public_facades_test
-import renderer_integration_test
 import tables_test
 import tracking_display_test
-import writerly_assembly_test
 import writerly_handles_grand_wrapper_generate_dictionary_test
 import writerly_handles_grand_wrapper_substitute_test
 import writerly_handles_integration_test
@@ -32,8 +30,6 @@ pub fn main() {
   line_wrap_test.main()
   monitor_test.main()
   public_facades_test.main()
-  renderer_integration_test.main()
   tables_test.main()
   tracking_display_test.main()
-  writerly_assembly_test.main()
 }

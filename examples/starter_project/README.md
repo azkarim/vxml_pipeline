@@ -34,6 +34,7 @@ The second pass resolves the table of contents and cross-references.
 - `src/local_desugarer_tests.gleam` runs only the local tests.
 - `public/app.css` supplies the HTML presentation.
 
-The repository-relative `vxml_pipeline` dependency in `gleam.toml` lets this
-example test the checkout that contains it. After copying the starter into a
-separate project, replace that dependency with an appropriate released version.
+The path dependencies in `gleam.toml` let this example test the checkout that
+contains it, with `vxml`, `writerly`, and `vxml_pipeline_cli` checked out as
+siblings of `vxml_pipeline`. After copying the starter into a separate project,
+replace them with appropriate released versions.

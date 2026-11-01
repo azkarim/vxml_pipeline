@@ -43,8 +43,9 @@ import vxml_pipeline/desugarers as dl
 import vxml_pipeline/split_replacement as sr
 
 // Regex-escape a LaTeX environment name for a split-rule pattern.
-// only `*` needs escaping (braces are literal in the regex flavor used here, as
-// evidenced by the hand-written align / align* splitters below)
+// Only `*` needs escaping in a name. The braces around it are escaped by the
+// callers: Erlang's PCRE reads a bare `{` as a literal, but JavaScript's
+// unicode-mode regexes reject it.
 fn regex_escape_environment_name(name: String) -> String {
   string.replace(name, "*", "\\*")
 }
@@ -100,7 +101,7 @@ fn delimiter_data(delimiter: LatexDelimiterSingleton) -> DelimiterData {
     BeginAlign ->
       DelimiterData(
         "\\begin{align}",
-        "\\\\begin{align}",
+        "\\\\begin\\{align\\}",
         "BeginAlign",
         OpeningDelimiter,
         False,
@@ -108,7 +109,7 @@ fn delimiter_data(delimiter: LatexDelimiterSingleton) -> DelimiterData {
     EndAlign ->
       DelimiterData(
         "\\end{align}",
-        "\\\\end{align}",
+        "\\\\end\\{align\\}",
         "EndAlign",
         ClosingDelimiter,
         False,
@@ -116,7 +117,7 @@ fn delimiter_data(delimiter: LatexDelimiterSingleton) -> DelimiterData {
     BeginAlignStar ->
       DelimiterData(
         "\\begin{align*}",
-        "\\\\begin{align\\*}",
+        "\\\\begin\\{align\\*\\}",
         "BeginAlignStar",
         OpeningDelimiter,
         False,
@@ -124,7 +125,7 @@ fn delimiter_data(delimiter: LatexDelimiterSingleton) -> DelimiterData {
     EndAlignStar ->
       DelimiterData(
         "\\end{align*}",
-        "\\\\end{align\\*}",
+        "\\\\end\\{align\\*\\}",
         "EndAlignStar",
         ClosingDelimiter,
         False,
@@ -132,7 +133,7 @@ fn delimiter_data(delimiter: LatexDelimiterSingleton) -> DelimiterData {
     BeginEnvironment(name) ->
       DelimiterData(
         "\\begin{" <> name <> "}",
-        "\\\\begin{" <> regex_escape_environment_name(name) <> "}",
+        "\\\\begin\\{" <> regex_escape_environment_name(name) <> "\\}",
         "BeginEnv:" <> name,
         OpeningDelimiter,
         False,
@@ -140,7 +141,7 @@ fn delimiter_data(delimiter: LatexDelimiterSingleton) -> DelimiterData {
     EndEnvironment(name) ->
       DelimiterData(
         "\\end{" <> name <> "}",
-        "\\\\end{" <> regex_escape_environment_name(name) <> "}",
+        "\\\\end\\{" <> regex_escape_environment_name(name) <> "\\}",
         "EndEnv:" <> name,
         ClosingDelimiter,
         False,
@@ -503,12 +504,12 @@ pub fn annotated_backtick_pipeline(
   let start_splitter = sr.unescaped_regexp_split_rule("`", sr.Tag(start_tag))
   let end_splitter =
     sr.regexp_split_rule_for_groups([
-      #("`{", sr.Discard),
+      #("`\\{", sr.Discard),
       #(
         "[a-zA-Z0-9\\-\\.#_]*",
         sr.TagWithSegmentAsValue(end_tag, annotation_key),
       ),
-      #("}", sr.Discard),
+      #("\\}", sr.Discard),
     ])
   [
     [

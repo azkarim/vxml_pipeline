@@ -80,6 +80,29 @@ API modules without losing functionality. Examples include:
 not part of the client API, so it can be moved more safely than a public custom
 type if `vxml_pipeline.Monitor` and `vxml_pipeline.new_monitor` remain usable.
 
+## Host-bound API (moved in 0.5.0)
+
+This package performs no file access and spawns no processes, so it compiles
+for both targets and runs in the browser. These public functions moved to the
+Erlang-only `vxml_pipeline_cli` package with unchanged signatures:
+
+| Before (`vxml_pipeline`) | After |
+|---|---|
+| `default_file_assembler`, `default_writer`, `default_prettier_prettifier` | `vxml_pipeline_cli` |
+| `run_renderer` (interactive runner) | `vxml_pipeline_cli.run_renderer` |
+| `run_pipeline` (interactive runner) | `vxml_pipeline_cli.run_pipeline` |
+| `read_from_dot_last_command`, `write_to_dot_last_command` | `vxml_pipeline_cli` |
+| `handle_maintenance_requests` | `vxml_pipeline_cli` |
+| `vxml_pipeline/generate_local_desugarers_dot_gleam`, `vxml_pipeline/renumber_local_desugarer_blames` | `vxml_pipeline_cli/…` (same module names) |
+| `vxml_pipeline/writerly_defaults.default_writerly_assembler` | `vxml_pipeline_cli/writerly.default_writerly_assembler` |
+
+`vxml_pipeline.run_pipeline` and `vxml_pipeline.run_renderer` remain with the
+same signatures, using the portable synchronous runner. `CLIError` and its
+constructors stay in `vxml_pipeline`. New portable API: `run_pipeline_fold`,
+`run_pipeline_with_events`, `PipelineEvent`, `PipelineResult`,
+`PipelineRunner`, `run_renderer_with_pipeline_runner`, `print_feedback_block`,
+and `writerly_defaults.assemble_writerly_sources`.
+
 ## Restructuring rules
 
 1. Keep constructor-owning public types in their documented modules.

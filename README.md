@@ -14,13 +14,21 @@ The package provides two related execution layers:
   filter, transform, split, emit, write, and optionally prettify
 
 The package also includes reusable desugarers, pipeline monitors, command-line
-argument handling, local-desugarer tooling, and a test framework for
-desugarers.
+argument handling, and a test framework for desugarers.
+
+The package performs no file access and spawns no processes, so it runs on
+both the Erlang and JavaScript targets, including in the browser. Everything
+that needs a host lives in the Erlang-only companion package
+`vxml_pipeline_cli`: renderer stages that read and write files, the Prettier
+prettifier, a pipeline runner with interactive monitor mode and
+long-running-desugarer reports, `.last-command` persistence, and the
+local-desugarer maintenance tools.
 
 Add it to a Gleam project with:
 
 ```sh
 gleam add vxml_pipeline
+gleam add vxml_pipeline_cli  # for command-line renderers on Erlang
 ```
 
 ## Desugarers
@@ -226,6 +234,28 @@ and one duration per desugaring step, in pipeline order. It returns a
 the user exits an interactive run. Timing is part of pipeline execution;
 monitors do not measure desugarer durations.
 
+`run_pipeline` runs synchronously and prints monitor feedback as it is
+produced. It ignores `monitor_interactive_mode` and
+`report_long_running_desugarers`, which need a terminal;
+`vxml_pipeline_cli.run_pipeline` has the same signature and honors them by
+running the pipeline in a separate Erlang process.
+
+To observe a run without printing, use `run_pipeline_fold`. It folds every
+`PipelineEvent` (`DesugarerStarted`, `DesugarerFinished`,
+`MonitorProducedFeedback`) into a state of your choice and returns that state
+alongside the result, including when the pipeline fails. An editor can collect
+monitor feedback this way:
+
+```gleam
+let #(result, events) =
+  vp.run_pipeline_fold(vxml, pipeline, monitors, [], fn(events, event) {
+    [event, ..events]
+  })
+```
+
+`run_pipeline_with_events` is the side-effecting variant that passes each
+event to a callback.
+
 No renderer or command-line setup is required for standalone execution. A
 Gleam program can construct or parse a VXML value, build a pipeline, call
 `run_pipeline`, and handle the returned `Result` directly.
@@ -273,6 +303,7 @@ as `test/renderer_integration_test.gleam`:
 import vxml_pipeline as vp
 import vxml_pipeline/core
 import vxml_pipeline/desugarers as ds
+import vxml_pipeline_cli as cli
 
 fn pipeline() -> core.Pipeline {
   [
@@ -293,17 +324,17 @@ pub fn run() {
 
   let renderer =
     vp.Renderer(
-      assembler: vp.default_file_assembler,
+      assembler: cli.default_file_assembler,
       parser: vp.default_xml_parser,
       filterer: vp.default_filterer(_, options, []),
       pipeline: pipeline(),
       splitter: vp.stub_splitter(".tsx"),
       emitter: vp.stub_jsx_emitter,
-      writer: vp.default_writer,
+      writer: cli.default_writer,
       prettifier: vp.empty_prettifier,
     )
 
-  vp.run_renderer(renderer, parameters, options)
+  cli.run_renderer(renderer, parameters, options)
 }
 ```
 
@@ -311,8 +342,15 @@ pub fn run() {
 type retains the error type of each application-provided stage. It prints its
 own progress block and terminates that block with one blank line.
 
-The default writer creates missing parent directories and overwrites output
-files. Prettifier modes are:
+The renderer itself does no I/O: every file access goes through the assembler,
+writer, and prettifier it is given. `vxml_pipeline.run_renderer` runs the
+pipeline with the portable `run_pipeline`; `vxml_pipeline_cli.run_renderer` is
+the same function with the interactive Erlang runner, and
+`run_renderer_with_pipeline_runner` accepts any `PipelineRunner`.
+
+`cli.default_writer` creates missing parent directories and overwrites output
+files, and `cli.default_prettier_prettifier` runs `prettier` on `.html` and
+`.tsx` fragments. Prettifier modes are:
 
 - `PrettifierOff`
 - `PrettifierOverwriteOutputDir`
@@ -327,14 +365,21 @@ and VXML rather than on its syntax directly:
 ```gleam
 import vxml_pipeline/writerly_defaults as wd
 
-wd.default_writerly_assembler
+wd.assemble_writerly_sources
 wd.default_writerly_parser
 wd.default_writerly_emitter
 ```
 
-The assembler accepts either a file or a directory tree. It reports the
-assembled directory tree as verbose feedback and respects the renderer's
-path-selection options.
+`wd.assemble_writerly_sources(root, sources, options)` assembles in-memory
+`writerly.SourceFile`s, so it also works in the browser; partially apply it as
+an assembler with `wd.assemble_writerly_sources(_, sources, options)`. It
+reports the assembled directory tree as verbose feedback and respects the
+renderer's path-selection options.
+
+To assemble a file or directory tree on disk, use
+`vxml_pipeline_cli/writerly.default_writerly_assembler`. It reads the `.wly`
+files with `read_writerly_sources` and then calls `assemble_writerly_sources`;
+its errors are `SourceReadError` and `SourceAssemblyError`.
 
 ## Feedback
 
@@ -464,6 +509,7 @@ A typical entry point has this shape:
 ```gleam
 import argv
 import vxml_pipeline as vp
+import vxml_pipeline_cli as cli
 import gleam/io
 import local_desugarers
 import on
@@ -474,7 +520,7 @@ pub fn main() {
   let args = argv.load().arguments
 
   use args <- on.error_ok(
-    vp.read_from_dot_last_command(args),
+    cli.read_from_dot_last_command(args),
     handle_cli_error,
   )
 
@@ -489,7 +535,7 @@ pub fn main() {
   )
 
   use maintenance_requested <- on.error_ok(
-    vp.handle_maintenance_requests(
+    cli.handle_maintenance_requests(
       arguments,
       local_desugarers.assertive_tests,
     ),
@@ -502,7 +548,7 @@ pub fn main() {
   })
 
   use _ <- on.error_ok(
-    vp.write_to_dot_last_command(args),
+    cli.write_to_dot_last_command(args),
     handle_cli_error,
   )
 
@@ -519,7 +565,8 @@ Applications can wrap a local failure with `ClientSideError` and use
 
 ### `.last-command`
 
-`read_from_dot_last_command` replaces the argument list only when it is exactly
+These functions live in `vxml_pipeline_cli`, because they read and write a
+file. `read_from_dot_last_command` replaces the argument list only when it is exactly
 `["--last-command"]`. If `--last-command` appears with another argument,
 command-line parsing rejects it. `write_to_dot_last_command` stores an
 unambiguous encoding of the effective argument list in `.last-command`.
@@ -650,13 +697,13 @@ src/
 Generate `src/local_desugarers.gleam` from `src/desugarers/`:
 
 ```sh
-gleam run -m vxml_pipeline/generate_local_desugarers_dot_gleam
+gleam run -m vxml_pipeline_cli/generate_local_desugarers_dot_gleam
 ```
 
 Renumber `authoring.blame` line references:
 
 ```sh
-gleam run -m vxml_pipeline/renumber_local_desugarer_blames
+gleam run -m vxml_pipeline_cli/renumber_local_desugarer_blames
 ```
 
 The generated registry exports each module's `constructor` and an
@@ -676,8 +723,10 @@ directory.
 
 ## Module guide
 
-- `vxml_pipeline` — renderer stages, execution, feedback, monitors, renderer
-  options, CLI handling, and default generic stages.
+- `vxml_pipeline` — renderer stages, portable pipeline execution, feedback,
+  monitors, renderer options, command-line parsing and help, and default
+  generic stages. File-backed stages, the interactive runner, `.last-command`,
+  and maintenance are in the `vxml_pipeline_cli` package.
 - `vxml_pipeline/core` — desugarer and pipeline types, errors and warnings, VXML
   helpers, and lower-level utilities used by desugarers.
 - `vxml_pipeline/desugarers` — generated registry of reusable desugarer
@@ -695,8 +744,8 @@ directory.
   output.
 - `vxml_pipeline/line_wrapping` — blame-preserving line wrapping.
 - `vxml_pipeline/writerly_defaults` —
-  [Writerly](https://hex.pm/packages/writerly) assembler, parser, and emitter
-  adapters.
+  [Writerly](https://hex.pm/packages/writerly) in-memory assembler, parser, and
+  emitter adapters.
 
 ## License
 

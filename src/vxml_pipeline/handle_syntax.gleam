@@ -9,6 +9,29 @@ import vxml_pipeline/handle_escaping
 /// zero or more decorators.
 pub const decorated_name_pattern = "[\\p{L}\\p{N}\\p{M}_.:'\\-\\^]*[\\p{L}\\p{N}\\p{M}_'\\^](?:#[\\p{L}\\p{N}\\p{M}_:'\\-]+)*"
 
+/// Returns a match's submatches padded with `None` to `count` entries.
+///
+/// On JavaScript, `gleam_regexp` drops trailing groups that matched the empty
+/// string, while on Erlang it reports them as `None`. Padding to the regexp's
+/// group count gives both targets the same list shape for pattern matching.
+pub fn padded_submatches(
+  match: regexp.Match,
+  count: Int,
+) -> List(Option(String)) {
+  pad_submatches(match.submatches, count)
+}
+
+fn pad_submatches(
+  submatches: List(Option(String)),
+  count: Int,
+) -> List(Option(String)) {
+  case submatches, count {
+    _, count if count <= 0 -> submatches
+    [], _ -> [None, ..pad_submatches([], count - 1)]
+    [first, ..rest], _ -> [first, ..pad_submatches(rest, count - 1)]
+  }
+}
+
 /// Encodes a handle value as `<<value>>` without otherwise escaping it.
 pub fn encode_value(value: String) -> String {
   "<<" <> value <> ">>"
